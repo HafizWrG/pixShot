@@ -174,18 +174,24 @@ export default function PixShotMega() {
     const peersRef = useRef<Record<string, RTCPeerConnection>>({});
     const [socketUrl, setSocketUrl] = useState(() => {
         if (typeof window === 'undefined') return 'http://localhost:3001';
-        const envUrl = process.env.NEXT_PUBLIC_SOCKET_URL?.replace('httpss://', 'https://');
+        const envUrl = process.env.NEXT_PUBLIC_SOCKET_URL?.trim();
         const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
-        // Skip internal railway URLs if testing locally
-        if (envUrl && (!isLocal || !envUrl.includes('.railway.internal'))) {
-            return envUrl;
+        // 1. Check Env Variable First (Correct way for production)
+        if (envUrl) {
+            console.log('[Socket] Using NEXT_PUBLIC_SOCKET_URL:', envUrl);
+            return envUrl.replace('httpss://', 'https://');
         }
 
-        // Local dev fallback
+        // 2. Local fallback
         if (isLocal) {
-            return `${window.location.protocol}//${window.location.hostname}:3001`;
+            const localUrl = `${window.location.protocol}//${window.location.hostname}:3001`;
+            console.log('[Socket] Using Local fallback:', localUrl);
+            return localUrl;
         }
+
+        // 3. Last resort (Often fails on Vercel unless server is on the same domain)
+        console.warn('[Socket] No NEXT_PUBLIC_SOCKET_URL found. Falling back to origin.');
         return window.location.origin;
     });
     const [connStatus, setConnStatus] = useState<'Disconnected' | 'Connecting' | 'Connected' | 'Error'>('Disconnected');
@@ -246,7 +252,7 @@ export default function PixShotMega() {
 
     // === MUTABLE GAME STATE ===
     const gameRef = useRef({
-        isPaused: false,
+        isPaused: false, hasSynced: false,
         player: { x: WORLD_SIZE / 2, y: WORLD_SIZE / 2, vx: 0, vy: 0, size: 20, angle: 0, hp: 100, maxHp: 100, class: 'basic', cooldown: 0, dashCooldown: 0, skillCooldowns: [0, 0, 0, 0, 0], z: 0, idleTime: 0, activeUlt: null as string | null, ultDuration: 0, activeBuffs: { speed: 0, damage: 0, shield: 0, size: 0, turret: 0, drone_frenzy: 0, reflect: 0, radar: 0, lava_trail: 0 } },
         baseStats: { speed: 1.5, reload: 25, bSpd: 10, bDmg: 12, bPen: 1, bodyDmg: 15, regen: 0.04 },
         statLevels: { regen: 0, maxHp: 0, bodyDmg: 0, bulletSpd: 0, bulletPen: 0, bulletDmg: 0, reload: 0, moveSpd: 0 } as Record<string, number>,
@@ -385,23 +391,26 @@ export default function PixShotMega() {
         console.log('[Socket] Connecting to:', socketUrl);
         setConnStatus('Connecting');
 
-        socketRef.current = io(socketUrl, {
+        const finalUrl = socketUrl.endsWith('/') ? socketUrl.slice(0, -1) : socketUrl;
+        console.log('[Socket] Final Connection URL:', finalUrl);
+        
+        socketRef.current = io(finalUrl, {
             reconnection: true,
             reconnectionAttempts: Infinity,
             reconnectionDelay: 1000,
             reconnectionDelayMax: 5000,
             timeout: 20000,
-            transports: ['polling', 'websocket'], // Allow both, but Localtunnel often needs polling first to clear the bypass screen
+            transports: ['polling', 'websocket'], // Polling first allows headers to bypass tunnels
+            withCredentials: false,
             extraHeaders: {
-                "bypass-tunnel-reminder": "true" // Specifically for Localtunnel to skip the landing page
+                "bypass-tunnel-reminder": "true" 
             }
         });
 
         socketRef.current.on('connect', () => {
-            console.log('[Socket] Connected to server:', socketRef.current?.id);
+            console.log('[Socket] Successfully connected! ID:', socketRef.current?.id);
             setConnStatus('Connected');
             addToast('Connected to Game Server', 'info');
-            // Re-fetch rooms if connection was lost
             socketRef.current?.emit('br:get_rooms');
         });
 
@@ -409,15 +418,18 @@ export default function PixShotMega() {
             console.log('[Socket] Disconnected:', reason);
             setConnStatus('Disconnected');
             if (reason === 'io server disconnect') {
-                // Server disconnected us, try to reconnect manually
                 socketRef.current?.connect();
             }
             addToast('Lost connection to server. Retrying...', 'info');
         });
 
         socketRef.current.on('connect_error', (error) => {
-            console.error('[Socket] Connection Error:', error.message);
+            console.error('[Socket] Connection Error Type:', error.name);
+            console.error('[Socket] Connection Error Message:', error.message);
             setConnStatus('Error');
+            if (error.message === 'xhr poll error' || error.message === 'websocket error') {
+                console.warn('[Socket] Transport error. Check if server is running and CORS allows origin:', window.location.origin);
+            }
         });
 
         socketRef.current.on('br:init', (data: any) => {
@@ -429,6 +441,7 @@ export default function PixShotMega() {
                 gameRef.current.player.y = data.selfData.y;
                 gameRef.current.camera.x = data.selfData.x;
                 gameRef.current.camera.y = data.selfData.y;
+                gameRef.current.hasSynced = true;
             }
 
             data.players.forEach((p: any) => { gameRef.current.brPlayers.push(p); });
@@ -466,6 +479,7 @@ export default function PixShotMega() {
         });
 
         socketRef.current.on('br:room_list', (data: any[]) => {
+            console.log('[Socket] Received room list:', data);
             setServerList(data);
         });
 
@@ -864,7 +878,7 @@ export default function PixShotMega() {
             weather: { type: 'clear', timer: 1000, flash: 0 },
             gameMode: mode, combo: { count: 0, timer: 0, max: 0 },
             sessionStart: Date.now(), kills: 0,
-            isGameOver: false
+            isGameOver: false, hasSynced: false
         };
 
         const state = gameRef.current;
@@ -880,7 +894,7 @@ export default function PixShotMega() {
             });
         }
 
-        if (isBR) {
+        if (isBR || is1v1) {
             const tgtRoom = targetRoomId || uiState.targetRoomId;
             if (socketRef.current) {
                 socketRef.current.emit('br:join', { uid: auth.isLoggedIn ? auth.uid : globalProfile.uid, name: auth.isLoggedIn ? auth.username : globalProfile.username, class: uiState.playerClass, mode: mode, roomId: tgtRoom });
@@ -999,17 +1013,18 @@ export default function PixShotMega() {
                     let dist = Math.hypot(dx, dy); let maxDist = 50 * settings.joystickScale;
                     if (dist > maxDist) { dx = (dx / dist) * maxDist; dy = (dy / dist) * maxDist; }
                     newL.dx = dx / maxDist; newL.dy = dy / maxDist;
+                    lActive = true;
                 } else {
-                    rActive = true;
-                    if (!joystick.right.active) { newR.originX = t.clientX; newR.originY = t.clientY; }
-                    newR.active = true; newR.x = t.clientX; newR.y = t.clientY;
+                    if (!joystick.right.active && !rActive) { newR.originX = t.clientX; newR.originY = t.clientY; }
+                    newR.x = t.clientX; newR.y = t.clientY;
                     let dx = t.clientX - newR.originX; let dy = t.clientY - newR.originY;
                     newR.angle = Math.atan2(dy, dx);
                     newR.distance = Math.hypot(dx, dy);
+                    rActive = true;
                 }
             }
-            if (!lActive) { newL.active = false; newL.dx = 0; newL.dy = 0; }
-            if (!rActive) newR.active = false;
+            if (lActive) newL.active = true; else newL.active = false;
+            if (rActive) newR.active = true; else newR.active = false;
             setJoystick({ left: newL, right: newR, pinchDist: 0 });
         };
 
@@ -1027,9 +1042,10 @@ export default function PixShotMega() {
 
         const canvas = canvasRef.current;
         if (canvas) {
-            canvas.addEventListener('touchstart', touchMove, { passive: false });
+            canvas.addEventListener('touchstart', (e) => { e.preventDefault(); touchMove(e); }, { passive: false });
             canvas.addEventListener('touchmove', touchMove, { passive: false });
             canvas.addEventListener('touchend', touchEnd, { passive: false });
+            canvas.addEventListener('touchcancel', touchEnd, { passive: false });
             return () => {
                 canvas.removeEventListener('touchstart', touchMove);
                 canvas.removeEventListener('touchmove', touchMove);
@@ -1110,8 +1126,10 @@ export default function PixShotMega() {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
 
-            // Auto-scale UI based on screen width
-            const newScale = window.innerWidth < 800 ? Math.max(0.6, window.innerWidth / 1000) : 1.0;
+            // Auto-scale UI based on screen width - aggressive for mobile
+            const isMob = window.innerWidth < 1024;
+            // 0.6 to 0.8 range for mobile usually feels better
+            const newScale = isMob ? Math.max(0.5, Math.min(0.75, window.innerWidth / 1100)) : 1.0;
 
             setSettings(prev => {
                 if (prev.uiScale === newScale) return prev;
@@ -1204,7 +1222,7 @@ export default function PixShotMega() {
 
                 // BATTLE ROYALE LOGIC
                 if (state.gameMode === 'battleroyale' || state.gameMode === 'pvp1v1') {
-                    if (frameCount % 3 === 0 && socketRef.current) {
+                    if (frameCount % 3 === 0 && socketRef.current && state.hasSynced) {
                         socketRef.current.emit('br:update', { x: state.player.x, y: state.player.y, vx: state.player.vx, vy: state.player.vy, angle: state.player.angle });
                     }
 
