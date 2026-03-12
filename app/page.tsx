@@ -865,7 +865,7 @@ export default function PixShotMega() {
         if (isBR) {
             const tgtRoom = targetRoomId || uiState.targetRoomId;
             if (socketRef.current) {
-                socketRef.current.emit('br:join', { uid: auth.isLoggedIn ? auth.uid : globalProfile.uid, name: auth.isLoggedIn ? auth.username : globalProfile.username, class: uiState.playerClass, roomId: tgtRoom });
+                socketRef.current.emit('br:join', { uid: auth.isLoggedIn ? auth.uid : globalProfile.uid, name: auth.isLoggedIn ? auth.username : globalProfile.username, class: uiState.playerClass, mode: mode, roomId: tgtRoom });
             }
         }
 
@@ -1088,14 +1088,17 @@ export default function PixShotMega() {
         ctx.imageSmoothingEnabled = false;
 
         const handleResize = () => { 
+            if (!canvas) return;
             canvas.width = window.innerWidth; 
             canvas.height = window.innerHeight; 
+            
             // Auto-scale UI based on screen width
-            if (window.innerWidth < 800) {
-                setSettings(prev => ({ ...prev, uiScale: Math.max(0.6, window.innerWidth / 1000) }));
-            } else {
-                setSettings(prev => ({ ...prev, uiScale: 1.0 }));
-            }
+            const newScale = window.innerWidth < 800 ? Math.max(0.6, window.innerWidth / 1000) : 1.0;
+            
+            setSettings(prev => {
+                if (prev.uiScale === newScale) return prev;
+                return { ...prev, uiScale: newScale };
+            });
         };
         handleResize(); window.addEventListener('resize', handleResize);
         if (window.visualViewport) {
@@ -3093,7 +3096,7 @@ export default function PixShotMega() {
                             {uiState.gameMode === 'battleroyale' && (
                                 <div className="bg-orange-900/60 backdrop-blur-md border border-orange-500/50 rounded-2xl px-5 py-2 flex flex-col items-center gap-1 min-w-[100px]">
                                     <div className="text-orange-300 text-[10px] font-black uppercase tracking-widest">Zone Closes</div>
-                                    <div className="text-sm font-mono font-bold text-white">{Math.ceil(gameRef.current.safeZone.timer / 60)}s</div>
+                                    <div className="text-sm font-mono font-bold text-white">{uiState.brTimeLeft}s</div>
                                 </div>
                             )}
 
