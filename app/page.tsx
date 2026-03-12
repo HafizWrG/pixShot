@@ -172,7 +172,22 @@ export default function PixShotMega() {
     const [voiceEnabled, setVoiceEnabled] = useState(false);
     const localStreamRef = useRef<MediaStream | null>(null);
     const peersRef = useRef<Record<string, RTCPeerConnection>>({});
-    const [socketUrl, setSocketUrl] = useState(process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001');
+    const [socketUrl, setSocketUrl] = useState(() => {
+        if (typeof window === 'undefined') return 'http://localhost:3001';
+        const envUrl = process.env.NEXT_PUBLIC_SOCKET_URL?.replace('httpss://', 'https://');
+        const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+
+        // Skip internal railway URLs if testing locally
+        if (envUrl && (!isLocal || !envUrl.includes('.railway.internal'))) {
+            return envUrl;
+        }
+
+        // Local dev fallback
+        if (isLocal) {
+            return `${window.location.protocol}//${window.location.hostname}:3001`;
+        }
+        return window.location.origin;
+    });
     const [connStatus, setConnStatus] = useState<'Disconnected' | 'Connecting' | 'Connected' | 'Error'>('Disconnected');
 
     // === TOAST NOTIFICATION SYSTEM ===
@@ -369,7 +384,7 @@ export default function PixShotMega() {
         // === AUTO CONNECT SOCKET.IO ===
         console.log('[Socket] Connecting to:', socketUrl);
         setConnStatus('Connecting');
-        
+
         socketRef.current = io(socketUrl, {
             reconnection: true,
             reconnectionAttempts: Infinity,
@@ -786,7 +801,7 @@ export default function PixShotMega() {
         // Enhanced Mobile Detection
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || (window.innerWidth <= 1024);
         setSettings(prev => ({ ...prev, isMobile: isMobile, joystickScale: isMobile ? 1.2 : 1.0 }));
-        
+
         const loadSound = async (id: string, src: string) => {
             try {
                 const response = await fetch(src);
@@ -1090,14 +1105,14 @@ export default function PixShotMega() {
 
         ctx.imageSmoothingEnabled = false;
 
-        const handleResize = () => { 
+        const handleResize = () => {
             if (!canvas) return;
-            canvas.width = window.innerWidth; 
-            canvas.height = window.innerHeight; 
-            
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+
             // Auto-scale UI based on screen width
             const newScale = window.innerWidth < 800 ? Math.max(0.6, window.innerWidth / 1000) : 1.0;
-            
+
             setSettings(prev => {
                 if (prev.uiScale === newScale) return prev;
                 return { ...prev, uiScale: newScale };
@@ -1188,7 +1203,7 @@ export default function PixShotMega() {
                 if (state.weather.flash > 0) state.weather.flash -= 0.05;
 
                 // BATTLE ROYALE LOGIC
-                if (state.gameMode === 'battleroyale') {
+                if (state.gameMode === 'battleroyale' || state.gameMode === 'pvp1v1') {
                     if (frameCount % 3 === 0 && socketRef.current) {
                         socketRef.current.emit('br:update', { x: state.player.x, y: state.player.y, vx: state.player.vx, vy: state.player.vy, angle: state.player.angle });
                     }
@@ -1265,7 +1280,7 @@ export default function PixShotMega() {
                         type: typeClass, h: 5, targetX: pX + Math.cos(fAngle) * 500, targetY: pY + Math.sin(fAngle) * 500, a: fAngle, carriedType: carriedData
                     };
                     state.bullets.push(b);
-                    if (!isRemote && state.gameMode === 'battleroyale' && socketRef.current) {
+                    if (!isRemote && (state.gameMode === 'battleroyale' || state.gameMode === 'pvp1v1') && socketRef.current) {
                         socketRef.current.emit('br:shoot', { x: b.x, y: b.y, vx: b.vx, vy: b.vy, life: b.life, maxLife: b.maxLife, damage: b.damage, penetration: b.penetration, type: b.type, h: b.h, targetX: b.targetX, targetY: b.targetY, a: b.a, carriedType: b.carriedType });
                     }
                 };
@@ -1516,7 +1531,7 @@ export default function PixShotMega() {
                 for (let i = state.bullets.length - 1; i >= 0; i--) {
                     let b = state.bullets[i];
 
-                    if (!b.isEnemy && state.gameMode === 'battleroyale') {
+                    if (!b.isEnemy && (state.gameMode === 'battleroyale' || state.gameMode === 'pvp1v1')) {
                         state.brPlayers.forEach(p => {
                             if (p.hp > 0 && Math.hypot(p.x - b.x, p.y - b.y) < (p.size || 20) + 10) {
                                 socketRef.current?.emit('br:hit', { targetSocketId: p.socketId, damage: b.damage });
@@ -1737,7 +1752,7 @@ export default function PixShotMega() {
                                 continue;
                             }
                             if (state.gameMode !== 'god' && state.player.activeUlt !== 'earthquake' && state.player.activeBuffs.shield <= 0) {
-                                if (!(state.gameMode === 'battleroyale' && !uiState.brStarted)) {
+                                if (!((state.gameMode === 'battleroyale' || state.gameMode === 'pvp1v1') && !uiState.brStarted)) {
                                     state.player.hp -= (shape.isBot ? 10 : 2);
                                     state.damageTexts.push({ x: state.player.x, y: state.player.y, text: (shape.isBot ? 10 : 2), life: 30, isPlayer: true });
                                     state.camera.shake = 15;
@@ -1906,7 +1921,7 @@ export default function PixShotMega() {
                     ctx.restore();
                     ctx.fillStyle = o.isParty ? '#60a5fa' : '#ef4444'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(o.name, o.x, o.y - 30);
 
-                    if (state.gameMode === 'battleroyale' && !uiState.brStarted && o.isReady) {
+                    if ((state.gameMode === 'battleroyale' || state.gameMode === 'pvp1v1') && !uiState.brStarted && o.isReady) {
                         ctx.fillStyle = '#10b981'; ctx.font = '16px Arial';
                         ctx.fillText('✔️ Ready', o.x, o.y - 45);
                     }
@@ -1963,7 +1978,7 @@ export default function PixShotMega() {
                         ctx.fillStyle = (frameCount % 20 < 10) ? '#fff' : '#000'; ctx.beginPath(); ctx.arc(0, 0, 4, 0, Math.PI * 2); ctx.fill();
                     } else {
                         let color = o.type === 'heal' ? '#22c55e' : o.type === 'speed' ? '#3b82f6' : o.type === 'damage' ? '#ef4444' : '#eab308';
-                        ctx.fillStyle = color; 
+                        ctx.fillStyle = color;
                         if (settingsRef.current.particles) { ctx.shadowColor = color; ctx.shadowBlur = 15; }
                         ctx.fillRect(-10, -10, 20, 20); ctx.fillStyle = '#fff'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center';
                         ctx.fillText(o.type.charAt(0).toUpperCase(), 0, 4);
@@ -2080,7 +2095,7 @@ export default function PixShotMega() {
                 state.brPlayers.forEach((p: any) => {
                     ctx.fillStyle = p.isParty ? '#3b82f6' : '#ef4444'; ctx.beginPath(); ctx.arc(mapX + p.x * scale, mapY + p.y * scale, 2, 0, Math.PI * 2); ctx.fill();
                 });
-                if (state.gameMode === 'battleroyale') {
+                if (state.gameMode === 'battleroyale' || state.gameMode === 'pvp1v1') {
                     ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(mapX + state.safeZone.x * scale, mapY + state.safeZone.y * scale, state.safeZone.radius * scale, 0, Math.PI * 2); ctx.stroke();
                 }
                 ctx.fillStyle = '#22d3ee'; ctx.beginPath(); ctx.arc(mapX + state.player.x * scale, mapY + state.player.y * scale, 3, 0, Math.PI * 2); ctx.fill();
@@ -2203,19 +2218,19 @@ export default function PixShotMega() {
             {uiState.isPlaying && !uiState.isGameOver && !uiState.isPaused && settings.isMobile && (
                 <>
                     <div className="absolute rounded-full border-2 border-white/20 bg-black/30 pointer-events-none"
-                        style={{ 
-                            left: `calc(var(--safe-left) + ${70 * settings.joystickScale}px)`, 
-                            bottom: `calc(var(--safe-bottom) + ${70 * settings.joystickScale}px)`, 
-                            width: 100 * settings.joystickScale, 
+                        style={{
+                            left: `calc(var(--safe-left) + ${70 * settings.joystickScale}px)`,
+                            bottom: `calc(var(--safe-bottom) + ${70 * settings.joystickScale}px)`,
+                            width: 100 * settings.joystickScale,
                             height: 100 * settings.joystickScale,
                             transform: 'translate(-50%, 50%)'
                         }}>
                         <div className="absolute bg-white/50 rounded-full transition-all duration-75"
-                            style={{ 
-                                left: (50 * settings.joystickScale) + (joystick.left.active ? joystick.left.dx * 40 * settings.joystickScale : 0) - (20 * settings.joystickScale), 
-                                top: (50 * settings.joystickScale) + (joystick.left.active ? joystick.left.dy * 40 * settings.joystickScale : 0) - (20 * settings.joystickScale), 
-                                width: 40 * settings.joystickScale, 
-                                height: 40 * settings.joystickScale 
+                            style={{
+                                left: (50 * settings.joystickScale) + (joystick.left.active ? joystick.left.dx * 40 * settings.joystickScale : 0) - (20 * settings.joystickScale),
+                                top: (50 * settings.joystickScale) + (joystick.left.active ? joystick.left.dy * 40 * settings.joystickScale : 0) - (20 * settings.joystickScale),
+                                width: 40 * settings.joystickScale,
+                                height: 40 * settings.joystickScale
                             }}></div>
                     </div>
 
@@ -2309,7 +2324,7 @@ export default function PixShotMega() {
                         {/* LEFT PANEL: HERO SHOWCASE (Mobile & Desktop) */}
                         <div className="flex-1 flex flex-col items-center justify-center pt-8 md:pt-0">
                             <h1 className="text-5xl md:text-8xl font-black text-transparent bg-clip-text bg-gradient-to-b from-cyan-400 to-blue-600 tracking-tighter drop-shadow-[0_0_30px_rgba(6,182,212,0.4)] mb-2 md:mb-4 text-center z-10 uppercase w-full">PixShot.io</h1>
-                            
+
                             {/* Connection Indicator */}
                             <div className="z-10 mb-6 md:mb-10 flex items-center gap-2 bg-slate-900/60 px-4 py-1.5 rounded-full border border-slate-700/50 backdrop-blur-sm">
                                 <div className={`w-2 h-2 rounded-full animate-pulse ${connStatus === 'Connected' ? 'bg-emerald-400 shadow-[0_0_10px_#10b981]' : connStatus === 'Connecting' ? 'bg-amber-400 shadow-[0_0_10px_#f59e0b]' : 'bg-red-500 shadow-[0_0_10px_#ef4444]'}`}></div>
@@ -2350,36 +2365,36 @@ export default function PixShotMega() {
                                     <div className="bg-slate-900/90 backdrop-blur-xl border-2 border-red-500/50 p-6 md:p-8 rounded-3xl shadow-[0_0_50px_rgba(239,68,68,0.2)] flex flex-col items-center gap-6 max-w-sm w-[90%] mx-auto">
                                         <h2 className="text-4xl font-black text-red-500 uppercase tracking-widest drop-shadow-[0_0_15px_rgba(239,68,68,0.8)]">Decimated</h2>
 
-                                    <div className="grid grid-cols-2 gap-3 w-full">
-                                        <div className="bg-slate-800 rounded-xl p-3 border border-slate-700 text-center">
-                                            <div className="text-[10px] md:text-xs text-slate-400 uppercase font-bold tracking-widest mb-1">Score</div>
-                                            <div className="text-xl md:text-2xl font-black text-white font-mono">{uiState.score}</div>
+                                        <div className="grid grid-cols-2 gap-3 w-full">
+                                            <div className="bg-slate-800 rounded-xl p-3 border border-slate-700 text-center">
+                                                <div className="text-[10px] md:text-xs text-slate-400 uppercase font-bold tracking-widest mb-1">Score</div>
+                                                <div className="text-xl md:text-2xl font-black text-white font-mono">{uiState.score}</div>
+                                            </div>
+                                            <div className="bg-slate-800 rounded-xl p-3 border border-slate-700 text-center">
+                                                <div className="text-[10px] md:text-xs text-slate-400 uppercase font-bold tracking-widest mb-1">Earned</div>
+                                                <div className="text-xl md:text-2xl font-black text-amber-400 font-mono">+{uiState.inGameCoins}</div>
+                                            </div>
+                                            <div className="bg-slate-800 rounded-xl p-3 border border-slate-700 text-center">
+                                                <div className="text-[10px] md:text-xs text-slate-400 uppercase font-bold tracking-widest mb-1">Kills</div>
+                                                <div className="text-xl md:text-2xl font-black text-emerald-400 font-mono">{uiState.gameStats.kills}</div>
+                                            </div>
+                                            <div className="bg-slate-800 rounded-xl p-3 border border-slate-700 text-center">
+                                                <div className="text-[10px] md:text-xs text-slate-400 uppercase font-bold tracking-widest mb-1">Max Combo</div>
+                                                <div className="text-xl md:text-2xl font-black text-purple-400 font-mono">x{uiState.gameStats.maxCombo}</div>
+                                            </div>
                                         </div>
-                                        <div className="bg-slate-800 rounded-xl p-3 border border-slate-700 text-center">
-                                            <div className="text-[10px] md:text-xs text-slate-400 uppercase font-bold tracking-widest mb-1">Earned</div>
-                                            <div className="text-xl md:text-2xl font-black text-amber-400 font-mono">+{uiState.inGameCoins}</div>
-                                        </div>
-                                        <div className="bg-slate-800 rounded-xl p-3 border border-slate-700 text-center">
-                                            <div className="text-[10px] md:text-xs text-slate-400 uppercase font-bold tracking-widest mb-1">Kills</div>
-                                            <div className="text-xl md:text-2xl font-black text-emerald-400 font-mono">{uiState.gameStats.kills}</div>
-                                        </div>
-                                        <div className="bg-slate-800 rounded-xl p-3 border border-slate-700 text-center">
-                                            <div className="text-[10px] md:text-xs text-slate-400 uppercase font-bold tracking-widest mb-1">Max Combo</div>
-                                            <div className="text-xl md:text-2xl font-black text-purple-400 font-mono">x{uiState.gameStats.maxCombo}</div>
-                                        </div>
-                                    </div>
-                                    {uiState.gameMode !== 'battleroyale' && uiState.gameMode !== 'pvp1v1' && (
-                                        <div className="w-full bg-slate-800 rounded-xl p-3 border border-slate-700 flex justify-between items-center px-6 -mt-2">
-                                            <div className="text-[10px] md:text-xs text-slate-400 uppercase font-bold tracking-widest">Time Survived</div>
-                                            <div className="text-lg font-black text-cyan-400 font-mono">{Math.floor(uiState.gameStats.timeSurvived / 60)}:{(uiState.gameStats.timeSurvived % 60).toString().padStart(2, '0')}</div>
-                                        </div>
-                                    )}
+                                        {uiState.gameMode !== 'battleroyale' && uiState.gameMode !== 'pvp1v1' && (
+                                            <div className="w-full bg-slate-800 rounded-xl p-3 border border-slate-700 flex justify-between items-center px-6 -mt-2">
+                                                <div className="text-[10px] md:text-xs text-slate-400 uppercase font-bold tracking-widest">Time Survived</div>
+                                                <div className="text-lg font-black text-cyan-400 font-mono">{Math.floor(uiState.gameStats.timeSurvived / 60)}:{(uiState.gameStats.timeSurvived % 60).toString().padStart(2, '0')}</div>
+                                            </div>
+                                        )}
 
-                                    {uiState.gameMode !== 'battleroyale' && uiState.gameMode !== 'pvp1v1' && globalProfile.tokens > 0 && (
-                                        <button onClick={respawnWithToken} className="w-full py-4 bg-amber-500 hover:bg-amber-400 text-black font-black uppercase rounded-xl animate-pulse shadow-[0_0_15px_rgba(245,158,11,0.5)] transition-all text-sm md:text-base tracking-widest flex items-center justify-center gap-2 hover:-translate-y-1">
-                                            <span>🎟️</span> Respawn (1 Token)
-                                        </button>
-                                    )}
+                                        {uiState.gameMode !== 'battleroyale' && uiState.gameMode !== 'pvp1v1' && globalProfile.tokens > 0 && (
+                                            <button onClick={respawnWithToken} className="w-full py-4 bg-amber-500 hover:bg-amber-400 text-black font-black uppercase rounded-xl animate-pulse shadow-[0_0_15px_rgba(245,158,11,0.5)] transition-all text-sm md:text-base tracking-widest flex items-center justify-center gap-2 hover:-translate-y-1">
+                                                <span>🎟️</span> Respawn (1 Token)
+                                            </button>
+                                        )}
 
                                         <button onClick={exitToMainMenu} className="text-white font-bold uppercase tracking-widest bg-slate-800 hover:bg-slate-700 px-8 py-4 rounded-xl w-full border border-slate-600 text-sm md:text-base transition-all shadow-lg active:scale-95">Back To HQ</button>
                                     </div>
@@ -2900,7 +2915,7 @@ export default function PixShotMega() {
                                     <div className={`w-4 h-4 rounded-full bg-white absolute top-1 transition-transform ${settings.particles ? 'translate-x-7' : 'translate-x-1'}`}></div>
                                 </button>
                             </div>
-                            
+
                             <div className="bg-slate-800/30 p-4 rounded-xl border border-slate-700">
                                 <label className="text-xs text-slate-400 uppercase tracking-wider font-bold block mb-3">UI Scale (HUD): <span className="text-white">{Math.round(settings.uiScale * 100)}%</span></label>
                                 <input type="range" min="0.5" max="1.5" step="0.1" value={settings.uiScale} onChange={(e) => setSettings(p => ({ ...p, uiScale: parseFloat(e.target.value) }))} className="w-full accent-cyan-500" />
@@ -3014,7 +3029,7 @@ export default function PixShotMega() {
                                             </div>
                                             <div className="text-xs font-bold text-slate-400 leading-relaxed flex-1 border-t border-slate-700/50 pt-2 mt-1">{cls.desc}</div>
                                         </div>
-                                        
+
                                         {/* Preview Skills (Icons only) */}
                                         <div className="flex gap-1 mt-3 mb-4 justify-center bg-slate-950/40 p-2 rounded-xl border border-slate-800/50">
                                             {cls.skills.map((s: any, i: number) => (
@@ -3065,7 +3080,7 @@ export default function PixShotMega() {
                             <div className={`w-2 h-2 rounded-full ${ping < 100 ? 'bg-emerald-400' : ping < 200 ? 'bg-amber-400' : 'bg-red-500'}`}></div> {ping} ms
                         </div>
 
-                        {uiState.gameMode === 'battleroyale' && (
+                        {(uiState.gameMode === 'battleroyale' || uiState.gameMode === 'pvp1v1') && (
                             <div className="bg-red-900/60 backdrop-blur-md border border-red-500/50 rounded-2xl px-6 py-3 text-center shadow-[0_0_20px_rgba(220,38,38,0.4)] animate-pulse">
                                 <div className="text-red-300 text-[10px] font-black uppercase tracking-widest mb-1">Alive</div>
                                 <div className="text-3xl font-black text-white">{uiState.brAlive} <span className="text-red-400/50 text-xl">/ 30</span></div>
@@ -3096,7 +3111,7 @@ export default function PixShotMega() {
                                 <div className="text-sm font-bold text-emerald-400 uppercase tracking-wider">{uiState.biome}</div>
                             </div>
 
-                            {uiState.gameMode === 'battleroyale' && (
+                            {(uiState.gameMode === 'battleroyale' || uiState.gameMode === 'pvp1v1') && (
                                 <div className="bg-orange-900/60 backdrop-blur-md border border-orange-500/50 rounded-2xl px-5 py-2 flex flex-col items-center gap-1 min-w-[100px]">
                                     <div className="text-orange-300 text-[10px] font-black uppercase tracking-widest">Zone Closes</div>
                                     <div className="text-sm font-mono font-bold text-white">{uiState.brTimeLeft}s</div>
