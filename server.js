@@ -59,6 +59,26 @@ const playerToRoom = new Map(); // socketId -> roomId
 const ROOM_MAX = 30; // Max players per room
 const WORLD_SIZE = 8000; // Size of the game world
 
+// Function to broadcast room list to all clients
+function broadcastServerList() {
+  const rooms = [];
+  for (const [roomId, room] of brRooms.entries()) {
+    let readyCount = 0;
+    room.players.forEach(p => { if (p.isReady) readyCount++; });
+    
+    rooms.push({
+      id: roomId,
+      players: room.players.size,
+      max: room.maxRoomPlayers,
+      mode: room.mode,
+      state: room.started ? 'Started' : (room.countingDown ? 'Starting' : 'Waiting'),
+      readyCount: readyCount,
+      locked: room.locked
+    });
+  }
+  io.emit('br:room_list', rooms);
+}
+
 function getRoomId(socket, requestedRoomId, mode = 'battleroyale') {
   const is1v1 = mode === 'pvp1v1';
   const MAX_PLAYERS = is1v1 ? 2 : ROOM_MAX;
@@ -531,6 +551,10 @@ setInterval(() => {
           room.started = true;
           room.locked = true;
           console.log(`[BR] Room ${roomId} match officially started! Storm is active.`);
+          if (supabase) {
+            supabase.from('game_servers').update({ state: 'Started' }).match({ room_id: roomId }).then();
+          }
+          broadcastServerList();
         }
 
         timeLeft = Math.max(0, room.matchDuration - elapsed);
