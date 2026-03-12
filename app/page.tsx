@@ -217,6 +217,9 @@ export default function PixShotMega() {
     const settingsRef = useRef(settings);
     useEffect(() => { settingsRef.current = settings; }, [settings]);
 
+    const uiStateRef = useRef(uiState);
+    useEffect(() => { uiStateRef.current = uiState; }, [uiState]);
+
     const [joystick, setJoystick] = useState({
         left: { active: false, x: 0, y: 0, dx: 0, dy: 0 },
         right: { active: false, x: 0, y: 0, angle: 0, originX: 0, originY: 0, distance: 0 },
