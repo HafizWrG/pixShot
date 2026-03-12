@@ -3,8 +3,24 @@ const { createServer } = require('http');
 const { Server } = require('socket.io');
 const fs = require('fs');
 const path = require('path');
-const express = require('express');
-const app = express();
+const mimetypes = {
+  '.html': 'text/html',
+  '.js': 'text/javascript',
+  '.css': 'text/css',
+  '.json': 'application/json',
+  '.png': 'image/png',
+  '.jpg': 'image/jpg',
+  '.gif': 'image/gif',
+  '.svg': 'image/svg+xml',
+  '.wav': 'audio/wav',
+  '.mp3': 'audio/mpeg',
+  '.mp4': 'video/mp4',
+  '.woff': 'application/font-woff',
+  '.ttf': 'application/font-ttf',
+  '.eot': 'application/vnd.ms-fontobject',
+  '.otf': 'application/font-otf',
+  '.wasm': 'application/wasm'
+};
 
 
 // Load environment variables from .env.local for local development
@@ -39,28 +55,44 @@ if (SUPABASE_URL && SUPABASE_KEY) {
   });
 }
 
-const httpServer = createServer(app);
+const httpServer = createServer((req, res) => {
+  const url = req.url === '/' ? '/index.html' : req.url;
+  const isInternal = url.startsWith('/socket.io') || url.startsWith('/admin');
+  
+  if (url === '/health' || url === '/status') {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    return res.end('OK');
+  }
 
-// Serve static files from Next.js exported 'out' directory
-const outDir = path.join(__dirname, 'out');
-if (fs.existsSync(outDir)) {
-  console.log(`[Server] Serving static files from: ${outDir}`);
-  app.use(express.static(outDir));
-} else {
-  console.warn(`[Server] WARNING: 'out' directory not found! Ensure you have run 'npm run build' if this is production.`);
-}
+  if (!isInternal) {
+    let filePath = path.join(__dirname, 'out', url);
+    
+    // Support for Next.js trailing slash and pretty URLs
+    if (!path.extname(filePath) && fs.existsSync(filePath + '.html')) {
+        filePath += '.html';
+    } else if (fs.existsSync(filePath) && fs.statSync(filePath).isDirectory()) {
+        filePath = path.join(filePath, 'index.html');
+    }
 
-// Health check and root route fallback
-app.get(['/health', '/status'], (req, res) => res.status(200).send('OK'));
-
-// If no static file found and it's not a socket.io request, serve index.html for SPA routing support
-app.get('*', (req, res, next) => {
-  if (req.url.startsWith('/socket.io')) return next();
-  const indexPath = path.join(outDir, 'index.html');
-  if (fs.existsSync(indexPath)) {
-    res.sendFile(indexPath);
-  } else {
-    res.status(404).send('Not Found');
+    if (fs.existsSync(filePath)) {
+        const ext = path.extname(filePath).toLowerCase();
+        const contentType = mimetypes[ext] || 'application/octet-stream';
+        res.writeHead(200, { 'Content-Type': contentType });
+        const readStream = fs.createReadStream(filePath);
+        readStream.pipe(res);
+        return;
+    } else if (!path.extname(url)) {
+        // Fallback to index.html for SPA routes
+        const indexPath = path.join(__dirname, 'out', 'index.html');
+        if (fs.existsSync(indexPath)) {
+            res.writeHead(200, { 'Content-Type': 'text/html' });
+            fs.createReadStream(indexPath).pipe(res);
+            return;
+        }
+    }
+    
+    res.writeHead(404);
+    res.end('404 Not Found');
   }
 });
 
