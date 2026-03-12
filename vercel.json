@@ -1,14 +1,10 @@
 {
   "cleanUrls": true,
   "trailingSlash": true,
-  "routes": [
+  "rewrites": [
     {
-      "src": "/_next/(.*)",
-      "dest": "/_next/$1"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "app/page.tsx"
+      "source": "/((?!_next/|[^/]+\\.[^/]+$).*)",
+      "destination": "/index.html"
     }
   ]
 }
