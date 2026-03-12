@@ -2,6 +2,10 @@ const { instrument } = require('@socket.io/admin-ui');
 const { createServer } = require('http');
 const { Server } = require('socket.io');
 const fs = require('fs');
+const path = require('path');
+const express = require('express');
+const app = express();
+
 
 // Load environment variables from .env.local for local development
 try {
@@ -35,19 +39,31 @@ if (SUPABASE_URL && SUPABASE_KEY) {
   });
 }
 
-const httpServer = createServer((req, res) => {
-  // Only handle these routes, let Socket.io and Admin UI handle the rest
-  const isInternal = req.url.startsWith('/socket.io') || req.url.startsWith('/admin');
-  
-  if (req.url === '/health' || req.url === '/') {
-    res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('OK');
-  } else if (!isInternal) {
-    console.log(`[HTTP] 404 Blocked: ${req.url}`);
-    res.writeHead(404);
-    res.end();
+const httpServer = createServer(app);
+
+// Serve static files from Next.js exported 'out' directory
+const outDir = path.join(__dirname, 'out');
+if (fs.existsSync(outDir)) {
+  console.log(`[Server] Serving static files from: ${outDir}`);
+  app.use(express.static(outDir));
+} else {
+  console.warn(`[Server] WARNING: 'out' directory not found! Ensure you have run 'npm run build' if this is production.`);
+}
+
+// Health check and root route fallback
+app.get(['/health', '/status'], (req, res) => res.status(200).send('OK'));
+
+// If no static file found and it's not a socket.io request, serve index.html for SPA routing support
+app.get('*', (req, res, next) => {
+  if (req.url.startsWith('/socket.io')) return next();
+  const indexPath = path.join(outDir, 'index.html');
+  if (fs.existsSync(indexPath)) {
+    res.sendFile(indexPath);
+  } else {
+    res.status(404).send('Not Found');
   }
 });
+
 // Update CORS for production and all-device connectivity
 const io = new Server(httpServer, {
   cors: {
@@ -70,7 +86,8 @@ const WORLD_SIZE = 8000; // Size of the game world
 function getRoomId(socket, requestedRoomId, mode = 'battleroyale') {
   const is1v1 = mode === 'pvp1v1';
   const MAX_PLAYERS = is1v1 ? 2 : ROOM_MAX;
-  const MAP_SIZE = WORLD_SIZE;
+  const MAP_SIZE = is1v1 ? 3000 : WORLD_SIZE; // Smaller map for 1v1 PvP
+
 
   // If a specific room is requested, prioritize it if it's available
   if (requestedRoomId && brRooms.has(requestedRoomId)) {
