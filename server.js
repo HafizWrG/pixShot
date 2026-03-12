@@ -540,7 +540,7 @@ setInterval(() => {
           room.locked = true;
           console.log(`[BR] Room ${roomId} match officially started! Storm is active.`);
           if (supabase) {
-            supabase.from('game_servers').update({ state: 'Started' }).match({ room_id: roomId }).then();
+            supabase.from('game_servers').update({ status: 'Started' }).match({ room_id: roomId }).then();
           }
           broadcastServerList();
         }
