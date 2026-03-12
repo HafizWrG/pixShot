@@ -1006,9 +1006,6 @@ export default function PixShotMega() {
         const canvas = canvasRef.current;
         if (!canvas) return;
 
-        const leftJoyOriginX = 120 * settings.joystickScale;
-        const leftJoyOriginY = window.innerHeight - (120 * settings.joystickScale);
-
         const handleTouch = (e: TouchEvent) => {
             if (e.target !== canvas) return;
             e.preventDefault();
@@ -1021,7 +1018,7 @@ export default function PixShotMega() {
                 setJoystick(p => {
                     if (p.pinchDist > 0) {
                         const diff = dist - p.pinchDist;
-                        gameRef.current.camera.zoom = Math.min(Math.max(0.5, gameRef.current.camera.zoom + (diff * 0.005)), 2.5);
+                        gameRef.current.camera.zoom = Math.min(Math.max(0.3, gameRef.current.camera.zoom + (diff * 0.005)), 2.5);
                     }
                     return { ...p, pinchDist: dist };
                 });
@@ -1031,10 +1028,15 @@ export default function PixShotMega() {
             let newL: any = null, newR: any = null;
             let foundLeft = false, foundRight = false;
 
+            const leftJoyOriginX = 120 * settings.joystickScale;
+            const leftJoyOriginY = window.innerHeight - (120 * settings.joystickScale);
+            const rightJoyOriginX = window.innerWidth - (120 * settings.joystickScale);
+            const rightJoyOriginY = window.innerHeight - (120 * settings.joystickScale);
+
             for (let i = 0; i < touches.length; i++) {
                 const t = touches[i];
                 
-                // Assign touch to left or right if not already assigned
+                // Left Joystick - Move
                 if (t.clientX < window.innerWidth / 2 && (touchStateRef.current.leftTouchId === null || touchStateRef.current.leftTouchId === t.identifier) && !foundLeft) {
                     touchStateRef.current.leftTouchId = t.identifier;
                     foundLeft = true;
@@ -1045,19 +1047,22 @@ export default function PixShotMega() {
                     if (dist > maxDist) { dx = (dx / dist) * maxDist; dy = (dy / dist) * maxDist; }
                     newL = { active: true, dx: dx / maxDist, dy: dy / maxDist };
                 } 
+                // Right Joystick - Attack
                 else if (t.clientX >= window.innerWidth / 2 && (touchStateRef.current.rightTouchId === null || touchStateRef.current.rightTouchId === t.identifier) && !foundRight) {
-                    const isNewTouch = touchStateRef.current.rightTouchId === null;
                     touchStateRef.current.rightTouchId = t.identifier;
                     foundRight = true;
+                    let originX = rightJoyOriginX;
+                    let originY = rightJoyOriginY;
                     
-                    setJoystick(prev => {
-                        let originX = isNewTouch ? t.clientX : prev.right.originX;
-                        let originY = isNewTouch ? t.clientY : prev.right.originY;
-                        let dx = t.clientX - originX;
-                        let dy = t.clientY - originY;
-                        newR = { active: true, x: t.clientX, y: t.clientY, angle: Math.atan2(dy, dx), originX, originY, distance: Math.hypot(dx, dy) };
-                        return prev; 
-                    });
+                    // Optional: Follow touch feature if far from base
+                    // let distFromBase = Math.hypot(t.clientX - originX, t.clientY - originY);
+                    // if (distFromBase > 150 * settings.joystickScale) { originX = t.clientX; originY = t.clientY; }
+
+                    let dx = t.clientX - originX;
+                    let dy = t.clientY - originY;
+                    let dist = Math.hypot(dx, dy);
+                    const angle = Math.atan2(dy, dx);
+                    newR = { active: true, x: t.clientX, y: t.clientY, angle, originX, originY, distance: dist };
                 }
             }
 
@@ -1066,7 +1071,7 @@ export default function PixShotMega() {
 
             setJoystick(prev => ({
                 left: newL || { active: false, x: 0, y: 0, dx: 0, dy: 0 },
-                right: newR || { active: false, x: 0, y: 0, angle: 0, originX: 0, originY: 0, distance: 0 },
+                right: newR || { active: false, x: 0, y: 0, angle: 0, originX: rightJoyOriginX, originY: rightJoyOriginY, distance: 0 },
                 pinchDist: touches.length === 2 ? prev.pinchDist : 0
             }));
         };
@@ -2139,7 +2144,9 @@ export default function PixShotMega() {
             }
 
             if (uiState.isPlaying && !uiState.isGameOver && settings.showMinimap) {
-                const mapSize = 160; const mapX = canvas.width - mapSize - 24; const mapY = settings.isMobile ? 100 : canvas.height - mapSize - 24;
+                const mapSize = 160 * (settings.isMobile ? 0.8 : 1.0) * settings.uiScale; 
+                const mapX = canvas.width - mapSize - 24; 
+                const mapY = settings.isMobile ? 24 : canvas.height - mapSize - 24;
                 ctx.save();
                 ctx.beginPath(); ctx.arc(mapX + mapSize / 2, mapY + mapSize / 2, mapSize / 2, 0, Math.PI * 2);
                 ctx.fillStyle = 'rgba(15, 23, 42, 0.7)'; ctx.fill();
@@ -2279,10 +2286,11 @@ export default function PixShotMega() {
             {/* VIRTUAL JOYSTICKS (Mobile Only) */}
             {uiState.isPlaying && !uiState.isGameOver && !uiState.isPaused && settings.isMobile && (
                 <>
+                    {/* Left Joystick - Move (Always Shown) */}
                     <div className="absolute rounded-full border-2 border-white/20 bg-black/30 pointer-events-none"
                         style={{
-                            left: `calc(var(--safe-left) + ${70 * settings.joystickScale}px)`,
-                            bottom: `calc(var(--safe-bottom) + ${70 * settings.joystickScale}px)`,
+                            left: 120 * settings.joystickScale,
+                            bottom: 120 * settings.joystickScale,
                             width: 100 * settings.joystickScale,
                             height: 100 * settings.joystickScale,
                             transform: 'translate(-50%, 50%)'
@@ -2296,17 +2304,28 @@ export default function PixShotMega() {
                             }}></div>
                     </div>
 
-                    {joystick.right.active && (
-                        <div className="absolute rounded-full border-2 border-red-500/30 bg-black/20 pointer-events-none"
-                            style={{ left: joystick.right.originX - (50 * settings.joystickScale), top: joystick.right.originY - (50 * settings.joystickScale), width: 100 * settings.joystickScale, height: 100 * settings.joystickScale }}>
-                            <div className="absolute bg-red-500/50 rounded-full"
-                                style={{ left: (50 * settings.joystickScale) + Math.cos(joystick.right.angle) * 40 * settings.joystickScale - (20 * settings.joystickScale), top: (50 * settings.joystickScale) + Math.sin(joystick.right.angle) * 40 * settings.joystickScale - (20 * settings.joystickScale), width: 40 * settings.joystickScale, height: 40 * settings.joystickScale }}></div>
-                        </div>
-                    )}
+                    {/* Right Joystick - Attack (Always Shown) */}
+                    <div className="absolute rounded-full border-2 border-red-500/20 bg-black/20 pointer-events-none"
+                        style={{
+                            left: window.innerWidth - (120 * settings.joystickScale),
+                            bottom: 120 * settings.joystickScale,
+                            width: 100 * settings.joystickScale,
+                            height: 100 * settings.joystickScale,
+                            transform: 'translate(-50%, 50%)'
+                        }}>
+                        <div className="absolute bg-red-500/50 rounded-full transition-all duration-75"
+                            style={{
+                                left: (50 * settings.joystickScale) + (joystick.right.active ? Math.cos(joystick.right.angle) * 40 * settings.joystickScale : 0) - (20 * settings.joystickScale),
+                                top: (50 * settings.joystickScale) + (joystick.right.active ? Math.sin(joystick.right.angle) * 40 * settings.joystickScale : 0) - (20 * settings.joystickScale),
+                                width: 40 * settings.joystickScale,
+                                height: 40 * settings.joystickScale
+                            }}></div>
+                    </div>
 
-                    <div className="absolute bottom-32 right-8 flex gap-4">
-                        <button className="w-16 h-16 rounded-full bg-slate-700/50 border border-slate-500 backdrop-blur text-white font-bold active:bg-slate-500 shadow-lg pointer-events-auto"
-                            onTouchStart={() => gameRef.current.keys.space = true} onTouchEnd={() => gameRef.current.keys.space = false}>DASH</button>
+                    <div className="absolute bottom-52 right-12 flex flex-col gap-4" style={{ transform: `scale(${settings.uiScale})`, transformOrigin: 'bottom right' }}>
+                        <button className="w-20 h-20 rounded-full bg-cyan-600/40 border-2 border-cyan-400 backdrop-blur-md text-white font-black active:bg-cyan-500 shadow-[0_0_20px_rgba(6,182,212,0.3)] pointer-events-auto flex items-center justify-center text-xs uppercase tracking-widest transition-transform active:scale-90"
+                            onMouseDown={() => gameRef.current.keys.space = true} onMouseUp={() => gameRef.current.keys.space = false}
+                            onTouchStart={(e) => { e.preventDefault(); gameRef.current.keys.space = true; }} onTouchEnd={(e) => { e.preventDefault(); gameRef.current.keys.space = false; }}>DASH</button>
                     </div>
                 </>
             )}
@@ -2991,46 +3010,46 @@ export default function PixShotMega() {
 
             {/* HUD UI */}
             {uiState.isPlaying && !uiState.isGameOver && (
-                <div style={{ transform: `scale(${settings.uiScale || 1})`, transformOrigin: 'top left' }} className="absolute inset-x-0 top-0 bottom-0 pointer-events-none z-30 flex flex-col pt-[var(--safe-top)] pl-[var(--safe-left)] pr-[var(--safe-right)] pb-[var(--safe-bottom)]">
-                    {/* KILL FEED */}
-                    <div className="absolute top-24 right-6 flex flex-col gap-1 items-end z-30 pointer-events-none">
+                <div className="absolute inset-0 pointer-events-none z-30 flex flex-col pt-[var(--safe-top)] pl-[var(--safe-left)] pr-[var(--safe-right)] pb-[var(--safe-bottom)]">
+                    {/* KILL FEED - Centered Top on Mobile to avoid Minimap/Score overlap */}
+                    <div className={`absolute flex flex-col gap-1 items-center z-30 pointer-events-none transition-all ${settings.isMobile ? 'top-4 left-1/2 -translate-x-1/2 w-48' : 'top-24 right-6 items-end'}`}
+                         style={{ transform: `scale(${settings.uiScale})`, transformOrigin: settings.isMobile ? 'top center' : 'top right' }}>
                         {killFeed.filter(k => Date.now() - k.time < 5000).map((k) => (
-                            <div key={k.id} className="bg-slate-900/80 border border-slate-700 backdrop-blur-sm px-4 py-2 rounded-lg text-sm font-bold flex gap-2">
-                                <span className="text-blue-400">{k.killer}</span> <span className="text-slate-400 text-[10px] mt-1">🔫</span> <span className="text-red-400">{k.victim}</span>
+                            <div key={k.id} className="bg-slate-900/80 border border-slate-700 backdrop-blur-sm px-3 py-1.5 rounded-lg text-xs font-bold flex gap-2">
+                                <span className="text-blue-400 truncate max-w-[60px]">{k.killer}</span> <span className="text-slate-400 text-[8px] mt-0.5">⚔️</span> <span className="text-red-400 truncate max-w-[60px]">{k.victim}</span>
                             </div>
                         ))}
                     </div>
 
-                    <div className="absolute top-6 right-6 flex flex-col items-end gap-3 z-40 pointer-events-none">
+                    {/* SCORE & STATUS - Top Right */}
+                    <div className="absolute top-6 right-6 flex flex-col items-end gap-3 z-40 pointer-events-none"
+                         style={{ transform: `scale(${settings.uiScale})`, transformOrigin: 'top right' }}>
                         <div className="bg-slate-900/60 backdrop-blur-md px-3 py-1 rounded-full text-xs font-bold text-slate-300 border border-slate-700/50 flex items-center gap-2">
                             <div className={`w-2 h-2 rounded-full ${ping < 100 ? 'bg-emerald-400' : ping < 200 ? 'bg-amber-400' : 'bg-red-500'}`}></div> {ping} ms
                         </div>
 
-                        {(uiState.gameMode === 'battleroyale' || uiState.gameMode === 'pvp1v1') && (
-                            <div className="bg-red-900/60 backdrop-blur-md border border-red-500/50 rounded-2xl px-6 py-3 text-center shadow-[0_0_20px_rgba(220,38,38,0.4)] animate-pulse">
-                                <div className="text-red-300 text-[10px] font-black uppercase tracking-widest mb-1">Alive</div>
-                                <div className="text-3xl font-black text-white">{uiState.brAlive} <span className="text-red-400/50 text-xl">/ 30</span></div>
-                            </div>
-                        )}
-                        <div className="bg-slate-900/60 backdrop-blur-md border border-slate-700/50 rounded-2xl px-6 py-3 text-right shadow-lg flex gap-4">
+                        {settings.isMobile && settings.showMinimap && <div className="h-32 w-1" /> /* Spacer for Minimap */}
+
+                        <div className="bg-slate-900/60 backdrop-blur-md border border-slate-700/50 rounded-2xl px-4 py-2 text-right shadow-lg flex gap-4">
                             <div>
-                                <div className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-1">Score</div>
-                                <div className="text-xl font-mono font-black text-white">{uiState.score}</div>
+                                <div className="text-slate-400 text-[8px] font-bold uppercase tracking-widest mb-0.5">Score</div>
+                                <div className="text-sm font-mono font-black text-white">{uiState.score}</div>
                             </div>
                             <div className="border-l border-slate-700 pl-4">
-                                <div className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-1">Coins</div>
-                                <div className="text-xl font-mono font-black text-amber-400">{uiState.inGameCoins} 🪙</div>
+                                <div className="text-slate-400 text-[8px] font-bold uppercase tracking-widest mb-0.5">Coins</div>
+                                <div className="text-sm font-mono font-black text-amber-400">{uiState.inGameCoins} 🪙</div>
                             </div>
                         </div>
-                        <div className="flex gap-2 w-full pointer-events-auto">
-                            <button onClick={togglePause} className="bg-slate-800/80 hover:bg-slate-700 backdrop-blur-md border border-slate-600 rounded-xl text-white py-2 px-4 shadow-lg transition-all font-xl">
+                        <div className="flex gap-2 pointer-events-auto">
+                            <button onClick={togglePause} className="bg-slate-800/80 hover:bg-slate-700 backdrop-blur-md border border-slate-600 rounded-xl text-white py-1.5 px-3 shadow-lg transition-all text-sm">
                                 ⏸️
                             </button>
                         </div>
                     </div>
 
-                    {/* Sector & Upgrades UI Layout (Right Side alignment) */}
-                    <div className="absolute top-6 left-6 flex items-start gap-4 z-40">
+                    {/* Sector & Upgrades UI Layout - Top Left */}
+                    <div className={`absolute top-6 left-6 flex items-start gap-4 z-40 transition-all ${settings.isMobile ? 'flex-col-reverse' : 'flex-row'}`}
+                         style={{ transform: `scale(${settings.uiScale})`, transformOrigin: 'top left' }}>
                         <div className="flex flex-col gap-3 pointer-events-none">
                             <div className="bg-slate-900/60 backdrop-blur-md border border-slate-700/50 rounded-2xl px-5 py-2 flex flex-col items-center gap-1 min-w-[100px]">
                                 <div className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Sector</div>
@@ -3044,43 +3063,34 @@ export default function PixShotMega() {
                                 </div>
                             )}
 
-                            {/* TANK SELECTOR FOR GOD MODE */}
                             {uiState.gameMode === 'god' && (
-                                <div className="relative pointer-events-auto">
-                                    <button
-                                        onClick={() => setShowGodSelector(true)}
-                                        className="bg-amber-950/40 backdrop-blur-md border border-amber-500/40 rounded-2xl p-2 pr-5 flex items-center gap-3 shadow-[0_0_25px_rgba(245,158,11,0.2)] hover:bg-amber-900/60 hover:border-amber-400 transition-all cursor-pointer group hover:scale-[1.03] active:scale-95"
-                                    >
-                                        <div className="w-12 h-12 bg-amber-500/20 rounded-xl border border-amber-500/50 flex items-center justify-center relative overflow-hidden shrink-0 shadow-inner group-hover:bg-amber-500/30 transition-colors">
-                                            <div className="absolute inset-0 bg-amber-400/20 blur-md animate-pulse" />
-                                            <img src={`/${uiState.playerClass === 'basic' ? 'biasa' : uiState.playerClass === 'warden' ? 'miaw' : uiState.playerClass === 'necromancer' ? 'necro' : 'tank_' + uiState.playerClass}.png`} className="w-8 h-8 object-contain filter drop-shadow-lg relative z-10 group-hover:scale-125 transition-transform" />
-                                        </div>
-                                        <div className="flex flex-col text-left justify-center py-1">
-                                            <span className="text-amber-400 text-[9px] font-black uppercase tracking-widest leading-none mb-1 drop-shadow-md">God Terminal</span>
-                                            <span className="text-xs font-black text-white uppercase leading-none truncate max-w-[100px] group-hover:text-amber-100 transition-colors">{CLASSES[uiState.playerClass]?.name}</span>
-                                        </div>
-                                    </button>
-                                </div>
+                                <button onClick={() => setShowGodSelector(true)} className="bg-amber-950/40 backdrop-blur-md border border-amber-500/40 rounded-2xl p-2 flex items-center gap-3 shadow-[0_0_25px_rgba(245,158,11,0.2)] pointer-events-auto">
+                                    <div className="w-12 h-12 bg-amber-500/20 rounded-xl border border-amber-500/50 flex items-center justify-center shrink-0">
+                                        <img src={`/${uiState.playerClass === 'basic' ? 'biasa' : uiState.playerClass === 'warden' ? 'miaw' : uiState.playerClass === 'necromancer' ? 'necro' : 'tank_' + uiState.playerClass}.png`} className="w-8 h-8 object-contain" />
+                                    </div>
+                                    <span className="text-xs font-black text-white uppercase truncate max-w-[80px]">{CLASSES[uiState.playerClass]?.name}</span>
+                                </button>
                             )}
                         </div>
 
-                        {!settings.isMobile && (
-                            <div className="flex flex-col gap-1 w-64 md:w-72 bg-slate-900/70 backdrop-blur-lg p-4 rounded-2xl border border-slate-700/50 shadow-2xl pointer-events-auto transition-all">
+                        {/* UPGRADES PANEL */}
+                        {(!settings.isMobile || uiState.statPoints > 0) && (
+                            <div className={`flex flex-col gap-1 ${settings.isMobile ? 'w-56' : 'w-64 md:w-72'} bg-slate-900/70 backdrop-blur-lg p-4 rounded-2xl border border-slate-700/50 shadow-2xl pointer-events-auto transition-all`}>
                                 <div className="flex justify-between items-center border-b border-slate-700/80 pb-2">
-                                    <span className="text-slate-200 font-bold text-sm">UPGRADES {uiState.statPoints > 0 && <span className="text-amber-400 animate-pulse font-mono bg-amber-400/10 px-2 py-0.5 rounded ml-2">Pts: {uiState.statPoints}</span>}</span>
-                                    <button onClick={() => setUiState(p => ({ ...p, minimizeUpgrades: !p.minimizeUpgrades }))} className="text-slate-400 hover:text-white font-bold px-2 py-1 bg-slate-800 rounded">
+                                    <span className="text-slate-200 font-bold text-[10px] md:text-sm uppercase tracking-widest">Upgrades {uiState.statPoints > 0 && <span className="text-amber-400 animate-pulse font-mono bg-amber-400/10 px-2 py-0.5 rounded ml-2">Pts: {uiState.statPoints}</span>}</span>
+                                    <button onClick={() => setUiState(p => ({ ...p, minimizeUpgrades: !p.minimizeUpgrades }))} className="text-slate-400 hover:text-white font-bold px-2 py-1 bg-slate-800 rounded text-xs">
                                         {uiState.minimizeUpgrades ? '+' : '-'}
                                     </button>
                                 </div>
 
                                 {!uiState.minimizeUpgrades && statsList.map((stat) => (
-                                    <div key={stat.id} className="flex items-center gap-3 group py-1 mt-1">
+                                    <div key={stat.id} className="flex items-center gap-3 group py-0.5 mt-0.5">
                                         <button disabled={uiState.statPoints <= 0 || uiState.stats[stat.id] >= 8} onClick={() => handleUpgradeStat(stat.id)}
-                                            className={`w-7 h-7 rounded flex items-center justify-center font-bold text-lg transition-all duration-200 ${uiState.statPoints > 0 && uiState.stats[stat.id] < 8 ? 'bg-slate-700 text-white hover:bg-white hover:text-slate-900 shadow-md cursor-pointer' : 'bg-slate-800/50 text-slate-600 cursor-not-allowed'}`}>+</button>
-                                        <div className="flex-1 text-[10px] text-slate-300 uppercase tracking-widest font-bold">{stat.name}</div>
-                                        <div className="flex gap-[2px]">
+                                            className={`w-6 h-6 rounded flex items-center justify-center font-bold text-base transition-all duration-200 ${uiState.statPoints > 0 && uiState.stats[stat.id] < 8 ? 'bg-slate-700 text-white hover:bg-white hover:text-slate-900 shadow-md cursor-pointer' : 'bg-slate-800/50 text-slate-600 cursor-not-allowed'}`}>+</button>
+                                        <div className="flex-1 text-[8px] md:text-[10px] text-slate-300 uppercase tracking-widest font-bold truncate">{stat.name}</div>
+                                        <div className="flex gap-[1px]">
                                             {[...Array(8)].map((_, idx) => (
-                                                <div key={idx} className={`w-[8px] md:w-[12px] h-3.5 rounded-sm transition-all duration-300 ${idx < uiState.stats[stat.id] ? (uiState.gameMode === 'god' ? 'bg-cyan-400' : `${stat.color}`) : 'bg-slate-800 border border-slate-700'}`}></div>
+                                                <div key={idx} className={`w-[6px] md:w-[10px] h-3 rounded-sm transition-all duration-300 ${idx < uiState.stats[stat.id] ? (uiState.gameMode === 'god' ? 'bg-cyan-400' : `${stat.color}`) : 'bg-slate-800 border border-slate-700'}`}></div>
                                             ))}
                                         </div>
                                     </div>
@@ -3089,38 +3099,36 @@ export default function PixShotMega() {
                         )}
                     </div>
 
-                    <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 w-full max-w-xl flex flex-col items-center z-30 pointer-events-none">
-                        <div className="text-white font-black mb-2 text-lg drop-shadow-md flex items-center gap-3 bg-slate-900/50 px-4 py-1 rounded-xl border border-slate-700/50 backdrop-blur">
-                            Level {uiState.level} <span className="text-emerald-400 text-sm">{uiState.level >= 150 ? '(MAX)' : ''}</span>
-                            <span className="text-cyan-300 font-mono">[{auth.isLoggedIn ? auth.username : globalProfile.username} - {CLASSES[uiState.playerClass]?.name}]</span>
+                    {/* BARS & SKILLS - Bottom Center */}
+                    <div className={`absolute left-1/2 transform -translate-x-1/2 w-full max-w-xl flex flex-col items-center z-30 pointer-events-none transition-all ${settings.isMobile ? 'bottom-2 scale-[0.85]' : 'bottom-8'}`}
+                         style={{ transform: settings.isMobile ? `translateX(-50%) scale(${settings.uiScale * 0.85})` : `translateX(-50%) scale(${settings.uiScale})`, transformOrigin: 'bottom center' }}>
+                        <div className="text-white font-black mb-2 text-sm md:text-lg drop-shadow-md flex items-center gap-3 bg-slate-900/50 px-4 py-1 rounded-xl border border-slate-700/50 backdrop-blur">
+                            Level {uiState.level} <span className="text-emerald-400 text-xs">{uiState.level >= 150 ? '(MAX)' : ''}</span>
+                            <span className="text-cyan-300 font-mono text-xs hidden md:inline">[{auth.isLoggedIn ? auth.username : globalProfile.username}]</span>
                         </div>
 
-                        {/* SPECIAL SKILLS (1 to 5) */}
-                        <div className="flex gap-4 pointer-events-auto mb-4 bg-slate-900/30 p-2 rounded-3xl backdrop-blur-md border border-slate-700/30 shadow-2xl">
+                        {/* SPECIAL SKILLS */}
+                        <div className="flex gap-2 md:gap-4 pointer-events-auto mb-3 bg-slate-900/30 p-2 rounded-2xl md:rounded-3xl backdrop-blur-md border border-slate-700/30 shadow-2xl">
                             {CLASSES[uiState.playerClass]?.skills.map((skill: any, i: number) => {
                                 const reqLvl = (i + 1) * 15;
                                 const isUnlocked = uiState.level >= reqLvl || uiState.gameMode === 'god';
                                 const cd = uiState.skillCooldowns[i] || 0;
-                                const maxCd = skill.cd;
-                                const pct = isUnlocked ? (cd > 0 ? (cd / maxCd) * 100 : 0) : 100;
+                                const pct = isUnlocked ? (cd > 0 ? (cd / skill.cd) * 100 : 0) : 100;
 
                                 return (
-                                    <div key={i} className={`relative w-16 h-16 md:w-20 md:h-20 rounded-2xl border-[3px] flex flex-col items-center justify-center overflow-hidden transition-all duration-300 select-none ${isUnlocked ? (cd <= 0 ? 'border-amber-400 bg-slate-800 shadow-[0_0_20px_rgba(245,158,11,0.5)] cursor-pointer hover:bg-slate-700 hover:-translate-y-2' : 'border-slate-700 bg-slate-900') : 'border-slate-800 bg-slate-950 opacity-40'}`}
+                                    <div key={i} className={`relative w-12 h-12 md:w-20 md:h-20 rounded-xl md:rounded-2xl border-2 md:border-[3px] flex flex-col items-center justify-center overflow-hidden transition-all duration-300 select-none ${isUnlocked ? (cd <= 0 ? 'border-amber-400 bg-slate-800 shadow-[0_0_20px_rgba(245,158,11,0.5)] cursor-pointer hover:bg-slate-700 hover:-translate-y-1' : 'border-slate-700 bg-slate-900') : 'border-slate-800 bg-slate-950 opacity-40'}`}
                                         onMouseDown={() => isUnlocked && cd <= 0 && (gameRef.current.keys[(i + 1).toString()] = true)}
                                         onMouseUp={() => gameRef.current.keys[(i + 1).toString()] = false}
                                         onTouchStart={(e) => { e.preventDefault(); isUnlocked && cd <= 0 && (gameRef.current.keys[(i + 1).toString()] = true); }}
                                         onTouchEnd={(e) => { e.preventDefault(); gameRef.current.keys[(i + 1).toString()] = false; }}>
-
-                                        <div className="absolute bottom-0 left-0 w-full bg-amber-500/20 shadow-[inset_0_-10px_20px_rgba(245,158,11,0.2)] mix-blend-overlay"></div>
                                         <div className="absolute bottom-0 left-0 w-full bg-slate-900/90 backdrop-blur-sm transition-all pointer-events-none" style={{ height: `${pct}%` }}></div>
-
-                                        <span className="relative z-10 text-[10px] md:text-xs font-black text-amber-300 bg-black/60 px-1.5 py-0.5 rounded-md border border-amber-500/30 shadow-md">[{i + 1}]</span>
-                                        <span className={`relative z-10 text-[9px] md:text-[10px] font-bold text-center leading-tight uppercase mt-1 px-1 drop-shadow-md ${isUnlocked ? 'text-white' : 'text-slate-500'}`}>
+                                        <span className="relative z-10 text-[8px] md:text-xs font-black text-amber-300">[{i + 1}]</span>
+                                        <span className="relative z-10 text-[7px] md:text-[10px] font-bold text-center leading-tight uppercase px-1 text-white truncate w-full">
                                             {isUnlocked ? skill.name : `Lvl ${reqLvl}`}
                                         </span>
                                         {cd > 0 && isUnlocked && (
-                                            <span className="absolute inset-0 flex items-center justify-center font-black text-2xl md:text-3xl text-red-400 z-20 pointer-events-none drop-shadow-[0_0_10px_rgba(239,68,68,0.8)] bg-black/50 backdrop-blur-[2px]">
-                                                {Math.ceil(cd / 60)}s
+                                            <span className="absolute inset-0 flex items-center justify-center font-black text-base md:text-3xl text-red-100 z-20 pointer-events-none bg-black/40">
+                                                {Math.ceil(cd / 60)}
                                             </span>
                                         )}
                                     </div>
@@ -3129,26 +3137,21 @@ export default function PixShotMega() {
                         </div>
 
                         {/* LEVEL/XP BAR */}
-                        <div className="w-full bg-slate-950/80 backdrop-blur-sm border border-slate-700 h-6 rounded-full overflow-hidden relative shadow-lg p-1">
-                            <div className="absolute inset-0 flex items-center justify-center text-[10px] font-black font-mono text-white z-10 drop-shadow-[0_1px_1px_rgba(0,0,0,1)]">
+                        <div className="w-full bg-slate-950/80 backdrop-blur-sm border border-slate-700 h-5 md:h-6 rounded-full overflow-hidden relative shadow-lg p-0.5 md:p-1">
+                            <div className="absolute inset-0 flex items-center justify-center text-[8px] md:text-[10px] font-black font-mono text-white z-10">
                                 {uiState.level >= 150 ? 'MAX LEVEL REACHED' : `${uiState.xp} / ${uiState.xpNeeded} XP`}
                             </div>
-                            <div className="h-full rounded-full transition-all duration-300 ease-out relative"
-                                style={{ width: `${uiState.level >= 150 ? 100 : (uiState.xp / uiState.xpNeeded) * 100}%`, backgroundColor: uiState.gameMode === 'god' ? '#22d3ee' : '#10b981' }}>
-                                <div className="absolute inset-0 bg-white/20 rounded-full w-full h-1/2"></div>
-                            </div>
+                            <div className="h-full rounded-full transition-all duration-300"
+                                style={{ width: `${uiState.level >= 150 ? 100 : (uiState.xp / uiState.xpNeeded) * 100}%`, backgroundColor: uiState.gameMode === 'god' ? '#22d3ee' : '#10b981' }}></div>
                         </div>
 
                         {/* PLAYER HEALTH BAR */}
-                        <div className="w-full mt-2 bg-slate-950/90 backdrop-blur-sm border border-red-900 h-6 rounded-full overflow-hidden relative shadow-[0_0_20px_rgba(220,38,38,0.4)] p-1">
-                            <div className="absolute inset-0 flex items-center justify-center text-[11px] font-black font-mono text-white z-10 drop-shadow-[0_2px_2px_rgba(0,0,0,1)] tracking-widest">
+                        <div className="w-full mt-1 md:mt-2 bg-slate-950/90 backdrop-blur-sm border border-red-900/50 h-5 md:h-6 rounded-full overflow-hidden relative shadow-lg p-0.5 md:p-1">
+                            <div className="absolute inset-0 flex items-center justify-center text-[9px] md:text-[11px] font-black font-mono text-white z-10">
                                 {Math.max(0, Math.floor(uiState.hp))} / {uiState.maxHp} HP
                             </div>
-                            <div className="h-full rounded-full transition-all duration-200 ease-out relative flex items-center justify-end pr-1"
-                                style={{ width: `${Math.min(100, Math.max(0, (uiState.hp / uiState.maxHp) * 100))}%`, backgroundImage: 'linear-gradient(to right, #7f1d1d, #dc2626, #f87171)' }}>
-                                <div className="absolute inset-0 bg-white/20 rounded-full w-full h-1/2"></div>
-                                <div className="w-2 h-full bg-white/60 blur-[2px] rounded-full"></div>
-                            </div>
+                            <div className="h-full rounded-full transition-all duration-200"
+                                style={{ width: `${Math.min(100, Math.max(0, (uiState.hp / uiState.maxHp) * 100))}%`, backgroundImage: 'linear-gradient(to right, #7f1d1d, #dc2626)' }}></div>
                         </div>
                     </div>
                 </div>
