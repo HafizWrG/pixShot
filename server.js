@@ -1,3 +1,4 @@
+console.log('[Server] Process starting...');
 const { instrument } = require('@socket.io/admin-ui');
 const { createServer } = require('http');
 const { Server } = require('socket.io');
