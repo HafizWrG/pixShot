@@ -2712,7 +2712,7 @@ export default function PixShotMega() {
                         </div>
                     </div>
                 </div>
-            </div>
+                </div>
             )}
 
             {/* PROFILE MODAL */}
@@ -2782,7 +2782,7 @@ export default function PixShotMega() {
                         </div>
                     </div>
                 </div>
-            </div>
+                </div>
             )}
 
             {/* SETTINGS MENU */}
@@ -2848,7 +2848,7 @@ export default function PixShotMega() {
                         </div>
                     </div>
                 </div>
-            </div>
+                </div>
             )}
 
             {/* GOD MODE TANK SHOWCASE MODAL */}
