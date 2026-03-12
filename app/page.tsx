@@ -174,8 +174,16 @@ export default function PixShotMega() {
     const peersRef = useRef<Record<string, RTCPeerConnection>>({});
     const [socketUrl, setSocketUrl] = useState(() => {
         if (typeof window === 'undefined') return 'http://localhost:3001';
-        const envUrl = process.env.NEXT_PUBLIC_SOCKET_URL?.trim();
+        let envUrl = process.env.NEXT_PUBLIC_SOCKET_URL?.trim();
         const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+
+        // DETECT INTERNAL RAILWAY URL (BROKEN FOR CLIENTS)
+        if (envUrl && envUrl.includes('.railway.internal')) {
+            console.error('[Socket] CRITICAL ERROR: You are using an INTERNAL Railway URL. The browser cannot connect to this.');
+            console.error('[Socket] Please use your PUBLIC Railway domain settings instead (e.g. https://your-app.up.railway.app)');
+            // Fallback to origin if we are on Vercel, or localhost if local
+            if (!isLocal) envUrl = undefined; 
+        }
 
         // 1. Check Env Variable First (Correct way for production)
         if (envUrl) {
@@ -190,7 +198,7 @@ export default function PixShotMega() {
             return localUrl;
         }
 
-        // 3. Last resort (Often fails on Vercel unless server is on the same domain)
+        // 3. Last resort
         console.warn('[Socket] No NEXT_PUBLIC_SOCKET_URL found. Falling back to origin.');
         return window.location.origin;
     });
@@ -427,8 +435,19 @@ export default function PixShotMega() {
             console.error('[Socket] Connection Error Type:', error.name);
             console.error('[Socket] Connection Error Message:', error.message);
             setConnStatus('Error');
+            
+            if (window.location.hostname.includes('vercel.app') && !process.env.NEXT_PUBLIC_SOCKET_URL) {
+                addToast('CRITICAL: NEXT_PUBLIC_SOCKET_URL is missing in Vercel settings!', 'info');
+                console.error('You are running on Vercel but have not set the Railway Server URL in your Environment Variables.');
+            }
+            
+            if (finalUrl.includes('.railway.internal')) {
+                addToast('ERROR: Using INTERNAL Railway URL. Change to PUBLIC URL in Settings!', 'info');
+                console.error('You are using a .internal Railway URL. Browsers cannot reach this. Use your Public Domain instead.');
+            }
+            
             if (error.message === 'xhr poll error' || error.message === 'websocket error') {
-                console.warn('[Socket] Transport error. Check if server is running and CORS allows origin:', window.location.origin);
+                console.warn('[Socket] Transport error. Check if server is running at:', finalUrl);
             }
         });
 
@@ -1128,8 +1147,17 @@ export default function PixShotMega() {
 
             // Auto-scale UI based on screen width - aggressive for mobile
             const isMob = window.innerWidth < 1024;
-            // 0.6 to 0.8 range for mobile usually feels better
-            const newScale = isMob ? Math.max(0.5, Math.min(0.75, window.innerWidth / 1100)) : 1.0;
+            const isMobileLandscape = isMob && window.innerWidth > window.innerHeight;
+            
+            // On mobile landscape, scale even more to prevent vertical clipping
+            let newScale = 1.0;
+            if (isMob) {
+                if (isMobileLandscape) {
+                    newScale = Math.max(0.4, Math.min(0.65, window.innerHeight / 700));
+                } else {
+                    newScale = Math.max(0.5, Math.min(0.75, window.innerWidth / 1100));
+                }
+            }
 
             setSettings(prev => {
                 if (prev.uiScale === newScale) return prev;
@@ -2299,223 +2327,121 @@ export default function PixShotMega() {
 
             {/* MAIN MENU & GAME OVER - top buttons removed, party stays */}
             {(!uiState.isPlaying || uiState.isGameOver) && !uiState.showAuth && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center z-50 overflow-hidden pointer-events-none">
+                <div className="absolute inset-0 flex flex-col items-center justify-center z-50 overflow-hidden pointer-events-auto bg-slate-950/40">
                     <div className="absolute inset-0 opacity-20 pointer-events-none" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)', backgroundSize: '40px 40px' }}></div>
-
-                    {/* Party UI Preview in Lobby */}
-                    {party.length > 0 && !uiState.isPlaying && !uiState.isGameOver && (
-                        <div className="absolute top-6 left-6 flex flex-col gap-2 pointer-events-auto z-40 bg-slate-900/60 p-4 rounded-3xl border border-slate-700 backdrop-blur shadow-2xl">
-                            <div className="text-xs font-black text-cyan-400 uppercase tracking-widest flex items-center justify-between border-b border-slate-700 pb-2 mb-2">
-                                SQUAD ({party.length + 1}/4)
-                                <button onClick={async () => {
-                                    try {
-                                        const s = await navigator.mediaDevices.getUserMedia({ audio: true });
-                                        localStreamRef.current = s; setVoiceEnabled(true); alert("Voice Chat Microphone Enabled!");
-                                    } catch (e) { alert("Mic Access Denied!"); }
-                                }} className={`px-2 py-1 rounded text-[10px] ${voiceEnabled ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500' : 'bg-slate-700 text-white'}`}>
-                                    {voiceEnabled ? '🎙️ Mic ON' : '🎙️ Enable Voice'}
-                                </button>
-                            </div>
-                            {party.map(p => (
-                                <div key={p.uid} className={`bg-slate-800 border ${p.isReady ? 'border-emerald-500/50' : 'border-slate-600'} px-4 py-2 rounded-xl font-bold text-slate-300 shadow-lg text-sm flex items-center justify-between gap-4`}>
-                                    <div className="flex items-center gap-2">
-                                        <span className="truncate max-w-[100px]">🔵 {p.name}</span>
-                                    </div>
-                                    <span className={`text-[10px] uppercase font-black ${p.isReady ? 'text-emerald-400' : 'text-slate-500'}`}>{p.isReady ? 'Ready' : 'Waiting'}</span>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
-            )}
-
-            {(!uiState.isPlaying || uiState.isGameOver) && !uiState.showAuth && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center overflow-y-auto custom-scrollbar pointer-events-auto">
-                    {/* Latar Belakang UI Menu Utama (Gradien + Blur) */}
-                    <div className="absolute inset-0 flex flex-col pointer-events-none fixed">
-                        <div className="flex-1 bg-gradient-to-b from-slate-900/60 to-transparent"></div>
-                        <div className="flex-1 bg-gradient-to-t from-slate-900 to-transparent"></div>
+                    
+                    <div className="absolute inset-0 flex flex-col pointer-events-none fixed z-0">
+                        <div className="flex-1 bg-gradient-to-b from-slate-900/80 to-transparent"></div>
+                        <div className="flex-1 bg-gradient-to-t from-slate-950 to-transparent"></div>
                     </div>
 
                     <div className="w-[95%] max-w-[1200px] z-10 flex flex-col md:flex-row gap-6 md:gap-16 py-10 items-center justify-center min-h-screen">
-
-                        {/* LEFT PANEL: HERO SHOWCASE (Mobile & Desktop) */}
-                        <div className="flex-1 flex flex-col items-center justify-center pt-8 md:pt-0">
+                        
+                        {/* LEFT PANEL: HERO SHOWCASE */}
+                        <div className="flex-1 flex flex-col items-center justify-center pt-8 md:pt-0 pointer-events-none">
                             <h1 className="text-5xl md:text-8xl font-black text-transparent bg-clip-text bg-gradient-to-b from-cyan-400 to-blue-600 tracking-tighter drop-shadow-[0_0_30px_rgba(6,182,212,0.4)] mb-2 md:mb-4 text-center z-10 uppercase w-full">PixShot.io</h1>
-
-                            {/* Connection Indicator */}
-                            <div className="z-10 mb-6 md:mb-10 flex items-center gap-2 bg-slate-900/60 px-4 py-1.5 rounded-full border border-slate-700/50 backdrop-blur-sm">
-                                <div className={`w-2 h-2 rounded-full animate-pulse ${connStatus === 'Connected' ? 'bg-emerald-400 shadow-[0_0_10px_#10b981]' : connStatus === 'Connecting' ? 'bg-amber-400 shadow-[0_0_10px_#f59e0b]' : 'bg-red-500 shadow-[0_0_10px_#ef4444]'}`}></div>
-                                <span className={`text-[10px] font-black uppercase tracking-[0.2em] ${connStatus === 'Connected' ? 'text-emerald-400' : connStatus === 'Connecting' ? 'text-amber-400' : 'text-red-400'}`}>
-                                    Server: {connStatus}
-                                </span>
+                            
+                            <div className="z-10 mb-4 md:mb-10 flex items-center gap-2 bg-slate-900/60 px-3 py-1 rounded-full border border-slate-700/50 backdrop-blur-sm pointer-events-auto">
+                                <div className={`w-1.5 h-1.5 rounded-full animate-pulse ${connStatus === 'Connected' ? 'bg-emerald-400 shadow-[0_0_10px_#10b981]' : connStatus === 'Connecting' ? 'bg-amber-400 shadow-[0_0_10px_#f59e0b]' : 'bg-red-500 shadow-[0_0_10px_#ef4444]'}`}></div>
+                                <span className={`text-[8px] md:text-[10px] font-black uppercase tracking-[0.2em] ${connStatus === 'Connected' ? 'text-emerald-400' : connStatus === 'Connecting' ? 'text-amber-400' : 'text-red-400'}`}>Server: {connStatus}</span>
                             </div>
 
                             {!uiState.isGameOver && (
-                                <div className="relative w-48 h-48 md:w-80 md:h-80 mx-auto z-10 flex items-center justify-center group cursor-pointer" onClick={() => setUiState(p => ({ ...p, showShop: true }))}>
+                                <div className="relative w-48 h-48 md:w-80 md:h-80 mx-auto z-10 flex items-center justify-center group cursor-pointer pointer-events-auto" onClick={() => setUiState(p => ({ ...p, showShop: true }))}>
                                     <div className="absolute inset-0 bg-cyan-500/10 rounded-full blur-3xl animate-pulse group-hover:bg-cyan-500/20 transition-all"></div>
-                                    <div className="absolute w-32 h-32 md:w-48 md:h-48 bg-cyan-900/40 rounded-full border border-cyan-500/30 blur-sm shadow-[0_0_40px_rgba(6,182,212,0.4)] animate-[spin_15s_linear_infinite] group-hover:border-cyan-400/60 transition-all"></div>
-                                    <img src={`/${uiState.playerClass === 'basic' ? 'biasa' : uiState.playerClass === 'warden' ? 'miaw' : uiState.playerClass === 'necromancer' ? 'necro' : 'tank_' + uiState.playerClass}.png`} alt="Hero Tank" className="w-full h-full object-contain relative z-10 animate-[pulse_4s_ease-in-out_infinite] group-hover:scale-110 transition-transform duration-500 drop-shadow-[0_20px_20px_rgba(0,0,0,0.8)] filter contrast-125" title="Click to Change Class" />
-
-                                    <div className="absolute bottom-0 md:-bottom-4 px-4 py-1.5 bg-slate-900/80 backdrop-blur border border-slate-700 rounded-full text-[10px] md:text-xs font-bold text-slate-300 uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity translate-y-2 group-hover:translate-y-0">
-                                        Change Class
-                                    </div>
+                                    <img src={`/${uiState.playerClass === 'basic' ? 'biasa' : uiState.playerClass === 'warden' ? 'miaw' : uiState.playerClass === 'necromancer' ? 'necro' : 'tank_' + uiState.playerClass}.png`} alt="Hero Tank" className="w-full h-full object-contain relative z-10 animate-[pulse_4s_ease-in-out_infinite] group-hover:scale-110 transition-transform duration-500 drop-shadow-[0_20px_20px_rgba(0,0,0,0.8)] filter contrast-125" />
+                                    <div className="absolute bottom-0 md:-bottom-4 px-4 py-1.5 bg-slate-900/80 backdrop-blur border border-slate-700 rounded-full text-[10px] md:text-xs font-bold text-slate-300 uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity translate-y-2 group-hover:translate-y-0">Change Class</div>
                                 </div>
                             )}
 
                             {!uiState.isGameOver && (
-                                <div className="flex items-center gap-4 mt-6 md:mt-10 z-10 flex-wrap justify-center bg-slate-900/50 backdrop-blur-md p-3 md:p-4 rounded-3xl border border-slate-800 shadow-xl w-full max-w-md">
-                                    <button onClick={() => setUiState(p => ({ ...p, showShop: true }))} className="flex-1 min-w-[100px] bg-amber-600/10 border border-amber-500/30 px-2 md:px-6 py-3 rounded-2xl font-black text-xs md:text-base hover:bg-amber-600/30 hover:border-amber-400 text-amber-400 tracking-widest uppercase transition-all shadow-[0_0_20px_rgba(245,158,11,0.1)] hover:shadow-[0_0_30px_rgba(245,158,11,0.3)] flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2">
-                                        <span className="text-lg md:text-xl">🛒</span> Arsenal
-                                    </button>
-                                    <div className="flex flex-col items-center justify-center px-4 border-slate-700 border-x">
-                                        <span className="text-[10px] md:text-xs text-slate-400 uppercase tracking-widest font-bold">Balance</span>
-                                        <span className="text-xl md:text-2xl font-black font-mono text-amber-400">{globalProfile.coins} <span className="text-sm">🪙</span></span>
+                                <div className="flex items-center gap-2 md:gap-4 mt-4 md:mt-10 z-10 flex-wrap justify-center bg-slate-900/50 backdrop-blur-md p-2 md:p-4 rounded-2xl md:rounded-3xl border border-slate-800 shadow-xl w-full max-w-sm md:max-w-md pointer-events-auto">
+                                    <button onClick={() => setUiState(p => ({ ...p, showShop: true }))} className="flex-1 min-w-[80px] md:min-w-[100px] bg-amber-600/10 border border-amber-500/30 px-2 md:px-6 py-2 md:py-3 rounded-xl md:rounded-2xl font-black text-[10px] md:text-base hover:bg-amber-600/30 hover:border-amber-400 text-amber-400 tracking-widest uppercase transition-all flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2"><span className="text-base md:text-xl">🛒</span> Arsenal</button>
+                                    <div className="flex flex-col items-center justify-center px-2 md:px-4 border-slate-700 border-x">
+                                        <span className="text-[8px] md:text-xs text-slate-400 uppercase tracking-widest font-bold">Credits</span>
+                                        <span className="text-lg md:text-2xl font-black font-mono text-amber-400">{globalProfile.coins} <span className="text-xs md:text-sm">🪙</span></span>
                                     </div>
-                                    <button onClick={() => setUiState(p => ({ ...p, showProfile: true }))} className="flex-1 min-w-[100px] bg-cyan-600/10 border border-cyan-500/30 px-2 md:px-6 py-3 rounded-2xl font-black text-xs md:text-base hover:bg-cyan-600/30 hover:border-cyan-400 text-cyan-400 tracking-widest uppercase transition-all shadow-[0_0_20px_rgba(6,182,212,0.1)] hover:shadow-[0_0_30px_rgba(6,182,212,0.3)] flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2">
-                                        <span className="text-lg md:text-xl">👤</span> Profile
-                                    </button>
+                                    <button onClick={() => setUiState(p => ({ ...p, showProfile: true }))} className="flex-1 min-w-[80px] md:min-w-[100px] bg-cyan-600/10 border border-cyan-500/30 px-2 md:px-6 py-2 md:py-3 rounded-xl md:rounded-2xl font-black text-[10px] md:text-base hover:bg-cyan-600/30 hover:border-cyan-400 text-cyan-400 tracking-widest uppercase transition-all flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2"><span className="text-base md:text-xl">👤</span> Profile</button>
                                 </div>
                             )}
 
                             {uiState.isGameOver && (
-                                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm pointer-events-auto">
-                                    <div className="bg-slate-900/90 backdrop-blur-xl border-2 border-red-500/50 p-6 md:p-8 rounded-3xl shadow-[0_0_50px_rgba(239,68,68,0.2)] flex flex-col items-center gap-6 max-w-sm w-[90%] mx-auto">
-                                        <h2 className="text-4xl font-black text-red-500 uppercase tracking-widest drop-shadow-[0_0_15px_rgba(239,68,68,0.8)]">Decimated</h2>
-
-                                        <div className="grid grid-cols-2 gap-3 w-full">
-                                            <div className="bg-slate-800 rounded-xl p-3 border border-slate-700 text-center">
-                                                <div className="text-[10px] md:text-xs text-slate-400 uppercase font-bold tracking-widest mb-1">Score</div>
-                                                <div className="text-xl md:text-2xl font-black text-white font-mono">{uiState.score}</div>
-                                            </div>
-                                            <div className="bg-slate-800 rounded-xl p-3 border border-slate-700 text-center">
-                                                <div className="text-[10px] md:text-xs text-slate-400 uppercase font-bold tracking-widest mb-1">Earned</div>
-                                                <div className="text-xl md:text-2xl font-black text-amber-400 font-mono">+{uiState.inGameCoins}</div>
-                                            </div>
-                                            <div className="bg-slate-800 rounded-xl p-3 border border-slate-700 text-center">
-                                                <div className="text-[10px] md:text-xs text-slate-400 uppercase font-bold tracking-widest mb-1">Kills</div>
-                                                <div className="text-xl md:text-2xl font-black text-emerald-400 font-mono">{uiState.gameStats.kills}</div>
-                                            </div>
-                                            <div className="bg-slate-800 rounded-xl p-3 border border-slate-700 text-center">
-                                                <div className="text-[10px] md:text-xs text-slate-400 uppercase font-bold tracking-widest mb-1">Max Combo</div>
-                                                <div className="text-xl md:text-2xl font-black text-purple-400 font-mono">x{uiState.gameStats.maxCombo}</div>
-                                            </div>
+                                <div className="z-10 flex flex-col items-center gap-6 max-w-sm w-full pointer-events-auto">
+                                    <h2 className="text-4xl font-black text-red-500 uppercase tracking-widest drop-shadow-[0_0_15px_rgba(239,68,68,0.8)]">Decimated</h2>
+                                    <div className="grid grid-cols-2 gap-3 w-full">
+                                        <div className="bg-slate-800 rounded-xl p-3 border border-slate-700 text-center">
+                                            <div className="text-[10px] md:text-xs text-slate-400 uppercase font-bold tracking-widest mb-1">Score</div>
+                                            <div className="text-xl md:text-2xl font-black text-white font-mono">{uiState.score}</div>
                                         </div>
-                                        {uiState.gameMode !== 'battleroyale' && uiState.gameMode !== 'pvp1v1' && (
-                                            <div className="w-full bg-slate-800 rounded-xl p-3 border border-slate-700 flex justify-between items-center px-6 -mt-2">
-                                                <div className="text-[10px] md:text-xs text-slate-400 uppercase font-bold tracking-widest">Time Survived</div>
-                                                <div className="text-lg font-black text-cyan-400 font-mono">{Math.floor(uiState.gameStats.timeSurvived / 60)}:{(uiState.gameStats.timeSurvived % 60).toString().padStart(2, '0')}</div>
-                                            </div>
-                                        )}
-
-                                        {uiState.gameMode !== 'battleroyale' && uiState.gameMode !== 'pvp1v1' && globalProfile.tokens > 0 && (
-                                            <button onClick={respawnWithToken} className="w-full py-4 bg-amber-500 hover:bg-amber-400 text-black font-black uppercase rounded-xl animate-pulse shadow-[0_0_15px_rgba(245,158,11,0.5)] transition-all text-sm md:text-base tracking-widest flex items-center justify-center gap-2 hover:-translate-y-1">
-                                                <span>🎟️</span> Respawn (1 Token)
-                                            </button>
-                                        )}
-
-                                        <button onClick={exitToMainMenu} className="text-white font-bold uppercase tracking-widest bg-slate-800 hover:bg-slate-700 px-8 py-4 rounded-xl w-full border border-slate-600 text-sm md:text-base transition-all shadow-lg active:scale-95">Back To HQ</button>
+                                        <div className="bg-slate-800 rounded-xl p-3 border border-slate-700 text-center">
+                                            <div className="text-[10px] md:text-xs text-slate-400 uppercase font-bold tracking-widest mb-1">Earned</div>
+                                            <div className="text-xl md:text-2xl font-black text-amber-400 font-mono">+{uiState.inGameCoins}</div>
+                                        </div>
                                     </div>
+                                    <button onClick={exitToMainMenu} className="text-white font-bold uppercase tracking-widest bg-slate-800 hover:bg-slate-700 px-8 py-4 rounded-xl w-full border border-slate-600 transiton-all shadow-lg active:scale-95">Back To HQ</button>
                                 </div>
                             )}
                         </div>
 
-                        {/* RIGHT PANEL: MODES & ACTION (Mobile & Desktop) */}
+                        {/* RIGHT PANEL: MODES & ACTION */}
                         <div className="flex-1 flex flex-col justify-end max-w-md mx-auto w-full z-10 pb-4 md:pb-0 pointer-events-auto">
-
                             {!uiState.isGameOver && (
-                                <div className="bg-slate-900/80 backdrop-blur-xl border border-slate-700 rounded-3xl p-5 md:p-8 shadow-2xl flex flex-col gap-4">
-                                    <div className="flex justify-between items-center mb-2">
-                                        <div className="text-xs text-slate-400 font-bold uppercase tracking-[0.2em] ml-2">Select Operation</div>
+                                <div className="bg-slate-900/80 backdrop-blur-xl border border-slate-700 rounded-3xl p-4 md:p-8 shadow-2xl flex flex-col gap-3 md:gap-4">
+                                    <div className="flex justify-between items-center mb-1 md:mb-2">
+                                        <div className="text-[10px] md:text-xs text-slate-400 font-bold uppercase tracking-[0.2em]">Select Operation</div>
                                         <div className="flex gap-2">
-                                            <button onClick={() => setUiState(p => ({ ...p, showFriends: true }))} className="text-lg bg-slate-800 hover:bg-slate-700 text-white rounded-full w-8 h-8 flex items-center justify-center shadow-lg border border-slate-600 relative">👥{(friendRequests.length > 0) && <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[8px] w-3 h-3 rounded-full flex items-center justify-center">{friendRequests.length}</span>}</button>
-                                            <button onClick={() => setUiState(p => ({ ...p, showLeaderboard: true }))} className="text-lg bg-slate-800 hover:bg-slate-700 text-amber-400 rounded-full w-8 h-8 flex items-center justify-center shadow-lg border border-amber-600/50">🏆</button>
-                                            <button onClick={() => setUiState(p => ({ ...p, showServerSettings: true }))} className="text-lg bg-slate-800 hover:bg-slate-700 text-cyan-400 rounded-full w-8 h-8 flex items-center justify-center shadow-lg border border-cyan-500/50" title="Server Settings">🔗</button>
-                                            <button onClick={() => setUiState(p => ({ ...p, showSettings: true }))} className="text-lg bg-slate-800 hover:bg-slate-700 text-white rounded-full w-8 h-8 flex items-center justify-center shadow-lg border border-slate-600">⚙️</button>
+                                            <button onClick={() => setUiState(p => ({ ...p, showFriends: true }))} className="text-xs md:text-lg bg-slate-800 hover:bg-slate-700 text-white rounded-full w-8 h-8 flex items-center justify-center border border-slate-600 relative">👥{(friendRequests.length > 0) && <span className="absolute -top-1 -right-1 bg-red-500 text-[8px] w-3 h-3 rounded-full flex items-center justify-center">{friendRequests.length}</span>}</button>
+                                            <button onClick={() => setUiState(p => ({ ...p, showSettings: true }))} className="text-xs md:text-lg bg-slate-800 hover:bg-slate-700 text-white rounded-full w-8 h-8 flex items-center justify-center border border-slate-600">⚙️</button>
                                         </div>
                                     </div>
 
                                     <div className="grid grid-cols-2 gap-3 md:gap-4">
-                                        <button onClick={() => setUiState(p => ({ ...p, gameMode: 'normal' }))} className={`group relative overflow-hidden rounded-2xl border ${uiState.gameMode === 'normal' ? 'border-cyan-400 bg-cyan-900/40 shadow-[0_0_20px_rgba(6,182,212,0.2)]' : 'border-slate-700 bg-slate-800/80 hover:bg-slate-700'}`}>
-                                            <div className="p-4 flex flex-col items-center justify-center gap-2 relative z-10 h-full">
-                                                <span className={`text-2xl ${uiState.gameMode === 'normal' ? 'text-cyan-400' : 'text-slate-400'}`}>🌍</span>
-                                                <span className={`font-black uppercase tracking-wider text-[10px] md:text-sm ${uiState.gameMode === 'normal' ? 'text-white' : 'text-slate-300'}`}>Survival</span>
+                                        <button onClick={() => setUiState(p => ({ ...p, gameMode: 'normal' }))} className={`group relative overflow-hidden rounded-2xl border ${uiState.gameMode === 'normal' ? 'border-cyan-400 bg-cyan-900/40' : 'border-slate-700 bg-slate-800/80 hover:bg-slate-700'}`}>
+                                            <div className="p-2 md:p-4 flex flex-col items-center justify-center gap-1 md:gap-2 relative z-10 h-full">
+                                                <span className={`text-xl md:text-2xl ${uiState.gameMode === 'normal' ? 'text-cyan-400' : 'text-slate-400'}`}>🌍</span>
+                                                <span className={`font-black uppercase tracking-wider text-[9px] md:text-sm ${uiState.gameMode === 'normal' ? 'text-white' : 'text-slate-300'}`}>Survival</span>
                                             </div>
                                         </button>
-
-                                        <button onClick={() => setUiState(p => ({ ...p, gameMode: 'battleroyale', showServerBrowser: true, targetRoomId: null }))} className={`group relative overflow-hidden rounded-2xl border ${uiState.gameMode === 'battleroyale' ? 'border-red-400 bg-red-900/40 shadow-[0_0_20px_rgba(239,68,68,0.2)]' : 'border-slate-700 bg-slate-800/80 hover:bg-slate-700'}`}>
-                                            <div className="p-4 flex flex-col items-center justify-center gap-2 relative z-10 h-full">
-                                                <span className={`text-2xl ${uiState.gameMode === 'battleroyale' ? 'text-red-400' : 'text-slate-400'}`}>🪂</span>
-                                                <span className={`font-black uppercase tracking-wider text-[10px] md:text-sm ${uiState.gameMode === 'battleroyale' ? 'text-white' : 'text-slate-300'}`}>B. Royale</span>
+                                        <button onClick={() => setUiState(p => ({ ...p, gameMode: 'battleroyale', showServerBrowser: true, targetRoomId: null }))} className={`group relative overflow-hidden rounded-2xl border ${uiState.gameMode === 'battleroyale' ? 'border-red-400 bg-red-900/40' : 'border-slate-700 bg-slate-800/80 hover:bg-slate-700'}`}>
+                                            <div className="p-2 md:p-4 flex flex-col items-center justify-center gap-1 md:gap-2 relative z-10 h-full">
+                                                <span className={`text-xl md:text-2xl ${uiState.gameMode === 'battleroyale' ? 'text-red-400' : 'text-slate-400'}`}>🪂</span>
+                                                <span className={`font-black uppercase tracking-wider text-[9px] md:text-sm ${uiState.gameMode === 'battleroyale' ? 'text-white' : 'text-slate-300'}`}>B. Royale</span>
                                             </div>
                                         </button>
-
-                                        <button onClick={() => setUiState(p => ({ ...p, gameMode: 'pvp1v1', showServerBrowser: true, targetRoomId: null }))} className={`group relative overflow-hidden rounded-2xl border ${uiState.gameMode === 'pvp1v1' ? 'border-purple-400 bg-purple-900/40 shadow-[0_0_20px_rgba(168,85,247,0.2)]' : 'border-slate-700 bg-slate-800/80 hover:bg-slate-700'}`}>
-                                            <div className="p-4 flex flex-col items-center justify-center gap-2 relative z-10 h-full">
-                                                <span className={`text-2xl ${uiState.gameMode === 'pvp1v1' ? 'text-purple-400' : 'text-slate-400'}`}>⚔️</span>
-                                                <span className={`font-black uppercase tracking-wider text-[10px] md:text-sm ${uiState.gameMode === 'pvp1v1' ? 'text-white' : 'text-slate-300'}`}>1v1 Arena</span>
+                                        <button onClick={() => setUiState(p => ({ ...p, gameMode: 'pvp1v1', showServerBrowser: true, targetRoomId: null }))} className={`group relative overflow-hidden rounded-2xl border ${uiState.gameMode === 'pvp1v1' ? 'border-purple-400 bg-purple-900/40' : 'border-slate-700 bg-slate-800/80 hover:bg-slate-700'}`}>
+                                            <div className="p-2 md:p-4 flex flex-col items-center justify-center gap-1 md:gap-2 relative z-10 h-full">
+                                                <span className={`text-xl md:text-2xl ${uiState.gameMode === 'pvp1v1' ? 'text-purple-400' : 'text-slate-400'}`}>⚔️</span>
+                                                <span className={`font-black uppercase tracking-wider text-[9px] md:text-sm ${uiState.gameMode === 'pvp1v1' ? 'text-white' : 'text-slate-300'}`}>1v1 Arena</span>
                                             </div>
                                         </button>
-
-                                        <button onClick={() => setUiState(p => ({ ...p, gameMode: 'peaceful' }))} className={`group relative overflow-hidden rounded-2xl border ${uiState.gameMode === 'peaceful' ? 'border-emerald-400 bg-emerald-900/40 shadow-[0_0_20px_rgba(16,185,129,0.2)]' : 'border-slate-700 bg-slate-800/80 hover:bg-slate-700'}`}>
-                                            <div className="p-4 flex flex-col items-center justify-center gap-2 relative z-10 h-full">
-                                                <span className={`text-2xl ${uiState.gameMode === 'peaceful' ? 'text-emerald-400' : 'text-slate-400'}`}>🌿</span>
-                                                <span className={`font-black uppercase tracking-wider text-[10px] md:text-sm ${uiState.gameMode === 'peaceful' ? 'text-white' : 'text-slate-300'}`}>Peaceful</span>
+                                        <button onClick={() => setUiState(p => ({ ...p, gameMode: 'god' }))} className={`group relative overflow-hidden rounded-2xl border ${uiState.gameMode === 'god' ? 'border-amber-400 bg-amber-900/40' : 'border-slate-700 bg-slate-800/80 hover:bg-slate-700'}`}>
+                                            <div className="p-2 md:p-4 flex flex-col items-center justify-center gap-1 md:gap-2 relative z-10 h-full">
+                                                <span className={`text-xl md:text-2xl ${uiState.gameMode === 'god' ? 'text-amber-400' : 'text-slate-400'}`}>⚚</span>
+                                                <span className={`font-black uppercase tracking-wider text-[9px] md:text-sm ${uiState.gameMode === 'god' ? 'text-white' : 'text-slate-300'}`}>God Mode</span>
                                             </div>
                                         </button>
-
-                                        <button onClick={() => setUiState(p => ({ ...p, gameMode: 'god' }))} className={`col-span-2 group relative overflow-hidden rounded-2xl border ${uiState.gameMode === 'god' ? 'border-amber-400 bg-amber-900/40 shadow-[0_0_30px_rgba(245,158,11,0.3)]' : 'border-slate-700 bg-slate-800/80 hover:bg-slate-700 hover:border-amber-500/50'}`}>
-                                            <div className="absolute inset-0 bg-[url('/noise.png')] opacity-10 mix-blend-overlay"></div>
-                                            <div className="p-4 flex items-center justify-center gap-4 relative z-10 h-full">
-                                                <span className={`text-2xl md:text-3xl ${uiState.gameMode === 'god' ? 'text-amber-400 drop-shadow-[0_0_15px_rgba(245,158,11,0.8)]' : 'text-slate-400 group-hover:text-amber-500/80'} transition-all`}>⚚</span>
-                                                <div className="flex flex-col text-left">
-                                                    <span className={`font-black uppercase tracking-widest text-xs md:text-lg leading-tight ${uiState.gameMode === 'god' ? 'text-white' : 'text-amber-100/50 group-hover:text-amber-200'}`}>God Mode</span>
-                                                    <span className={`text-[9px] md:text-xs font-bold uppercase tracking-widest ${uiState.gameMode === 'god' ? 'text-amber-300' : 'text-slate-500 group-hover:text-amber-500/70'}`}>Authority Overridden</span>
-                                                </div>
-                                            </div>
-                                        </button>
-
                                     </div>
 
                                     <div className="flex items-center gap-2 mt-2 w-full">
-                                        {party.length > 0 && (
-                                            <div className="flex gap-[-8px] -space-x-2">
-                                                {party.map(p => (
-                                                    <div key={p.uid} className={`w-8 h-8 rounded-full border-2 ${p.isReady ? 'border-emerald-500' : 'border-amber-500'} bg-slate-700 flex items-center justify-center relative shadow-lg`}>
-                                                        {p.avatar ? <img src={p.avatar} alt="" className="w-full h-full object-cover rounded-full" /> : <span className="text-xs">👤</span>}
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )}
                                         <button onClick={() => { setUiState(p => ({ ...p, showFriends: true })); setFriendTab('all'); }} className="flex-1 py-3 bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/50 text-indigo-400 rounded-xl font-bold uppercase tracking-widest text-[10px] md:text-sm transition-all shadow-md flex items-center justify-center gap-2">
                                             <span className="text-sm">➕</span> Party
                                         </button>
                                     </div>
 
                                     <button onClick={() => {
-                                        if (party.length > 0 && party.some(p => p.isReady === false)) {
-                                            alert("All party members must be Ready!");
-                                            return;
-                                        }
-                                        if (uiState.gameMode === 'battleroyale' || uiState.gameMode === 'pvp1v1') {
-                                            setUiState(p => ({ ...p, showServerBrowser: true }));
-                                            socketRef.current?.emit('br:get_rooms');
-                                        } else {
-                                            startGame(uiState.gameMode);
-                                        }
-                                    }} className="w-full mt-2 py-5 md:py-6 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 border border-cyan-400/50 rounded-2xl font-black text-lg md:text-2xl uppercase tracking-[0.2em] shadow-[0_0_30px_rgba(6,182,212,0.4)] transition-all hover:scale-[1.02] text-white relative overflow-hidden group">
+                                        if (party.length > 0 && party.some(p => p.isReady === false)) { alert("All party members must be Ready!"); return; }
+                                        if (uiState.gameMode === 'battleroyale' || uiState.gameMode === 'pvp1v1') { setUiState(p => ({ ...p, showServerBrowser: true })); socketRef.current?.emit('br:get_rooms'); } else { startGame(uiState.gameMode); }
+                                    }} className="w-full mt-2 py-5 md:py-6 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 border border-cyan-400/50 rounded-2xl font-black text-lg md:text-2xl uppercase tracking-[0.2em] shadow-[0_0_30px_rgba(6,182,212,0.4)] transition-all text-white relative overflow-hidden group">
                                         <span className="relative z-10">{uiState.gameMode === 'battleroyale' || uiState.gameMode === 'pvp1v1' ? 'FIND MATCH' : 'DEPLOY TANK'}</span>
-                                        <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
                                     </button>
-
                                 </div>
-                            )}
-
-                            {!uiState.isGameOver && (
-                                <p className="text-slate-500/80 font-mono mt-4 tracking-widest text-[10px] md:text-xs z-10 uppercase text-center hidden md:block">Developed by Hafiz Wrg &bull; v1.0.6</p>
                             )}
                         </div>
                     </div>
+
+                    {!uiState.isGameOver && (
+                        <p className="absolute bottom-6 left-1/2 -translate-x-1/2 text-slate-500/80 font-mono tracking-widest text-[10px] uppercase hidden md:block z-10">Developed by Hafiz Wrg &bull; v1.0.6</p>
+                    )}
                 </div>
             )}
 
