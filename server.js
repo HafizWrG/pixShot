@@ -1,7 +1,9 @@
 console.log('[Server] Process starting...');
 const { instrument } = require('@socket.io/admin-ui');
+console.log('[Server] Admin UI loaded');
 const { createServer } = require('http');
 const { Server } = require('socket.io');
+console.log('[Server] Core modules loaded');
 const fs = require('fs');
 const path = require('path');
 const mimetypes = {
@@ -47,6 +49,7 @@ const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 let supabase = null;
 if (SUPABASE_URL && SUPABASE_KEY) {
   supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+  console.log('[Server] Supabase client created');
   console.log('[BR] Connected to Supabase DB');
   
   // PURGE STALE SERVERS ON STARTUP
@@ -711,6 +714,7 @@ httpServer.on('error', (e) => {
   }
 });
 
+console.log('[Server] Attempting to listen on port', PORT);
 httpServer.listen(PORT, () => {
   console.log(`[BR Socket Server] Running on port ${PORT}`);
 });
