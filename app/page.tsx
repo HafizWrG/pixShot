@@ -999,79 +999,91 @@ export default function PixShotMega() {
     };
 
     // === TOUCH/MOBILE CONTROLS ===
+    const touchStateRef = useRef({ leftTouchId: null as number | null, rightTouchId: null as number | null });
+
     useEffect(() => {
         if (!settings.isMobile || !uiState.isPlaying || uiState.isPaused) return;
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
         const leftJoyOriginX = 120 * settings.joystickScale;
         const leftJoyOriginY = window.innerHeight - (120 * settings.joystickScale);
 
-        const touchMove = (e: any) => {
-            if (e.target !== canvasRef.current) return;
+        const handleTouch = (e: TouchEvent) => {
+            if (e.target !== canvas) return;
             e.preventDefault();
 
             const touches = e.touches;
-
+            
             // Pinch to Zoom
             if (touches.length === 2) {
                 const dist = Math.hypot(touches[0].clientX - touches[1].clientX, touches[0].clientY - touches[1].clientY);
-                if (joystick.pinchDist > 0) {
-                    const diff = dist - joystick.pinchDist;
-                    gameRef.current.camera.zoom = Math.min(Math.max(0.5, gameRef.current.camera.zoom + (diff * 0.005)), 2.5);
-                }
-                setJoystick(p => ({ ...p, pinchDist: dist }));
+                setJoystick(p => {
+                    if (p.pinchDist > 0) {
+                        const diff = dist - p.pinchDist;
+                        gameRef.current.camera.zoom = Math.min(Math.max(0.5, gameRef.current.camera.zoom + (diff * 0.005)), 2.5);
+                    }
+                    return { ...p, pinchDist: dist };
+                });
                 return;
             }
 
-            let lActive = false, rActive = false;
-            let newL = { ...joystick.left }, newR = { ...joystick.right };
+            let newL: any = null, newR: any = null;
+            let foundLeft = false, foundRight = false;
 
             for (let i = 0; i < touches.length; i++) {
                 const t = touches[i];
-                if (t.clientX < window.innerWidth / 2) {
-                    lActive = true; newL.active = true;
-                    let dx = t.clientX - leftJoyOriginX; let dy = t.clientY - leftJoyOriginY;
-                    let dist = Math.hypot(dx, dy); let maxDist = 50 * settings.joystickScale;
+                
+                // Assign touch to left or right if not already assigned
+                if (t.clientX < window.innerWidth / 2 && (touchStateRef.current.leftTouchId === null || touchStateRef.current.leftTouchId === t.identifier) && !foundLeft) {
+                    touchStateRef.current.leftTouchId = t.identifier;
+                    foundLeft = true;
+                    let dx = t.clientX - leftJoyOriginX;
+                    let dy = t.clientY - leftJoyOriginY;
+                    let dist = Math.hypot(dx, dy);
+                    let maxDist = 50 * settings.joystickScale;
                     if (dist > maxDist) { dx = (dx / dist) * maxDist; dy = (dy / dist) * maxDist; }
-                    newL.dx = dx / maxDist; newL.dy = dy / maxDist;
-                    lActive = true;
-                } else {
-                    if (!joystick.right.active && !rActive) { newR.originX = t.clientX; newR.originY = t.clientY; }
-                    newR.x = t.clientX; newR.y = t.clientY;
-                    let dx = t.clientX - newR.originX; let dy = t.clientY - newR.originY;
-                    newR.angle = Math.atan2(dy, dx);
-                    newR.distance = Math.hypot(dx, dy);
-                    rActive = true;
+                    newL = { active: true, dx: dx / maxDist, dy: dy / maxDist };
+                } 
+                else if (t.clientX >= window.innerWidth / 2 && (touchStateRef.current.rightTouchId === null || touchStateRef.current.rightTouchId === t.identifier) && !foundRight) {
+                    const isNewTouch = touchStateRef.current.rightTouchId === null;
+                    touchStateRef.current.rightTouchId = t.identifier;
+                    foundRight = true;
+                    
+                    setJoystick(prev => {
+                        let originX = isNewTouch ? t.clientX : prev.right.originX;
+                        let originY = isNewTouch ? t.clientY : prev.right.originY;
+                        let dx = t.clientX - originX;
+                        let dy = t.clientY - originY;
+                        newR = { active: true, x: t.clientX, y: t.clientY, angle: Math.atan2(dy, dx), originX, originY, distance: Math.hypot(dx, dy) };
+                        return prev; 
+                    });
                 }
             }
-            if (lActive) newL.active = true; else newL.active = false;
-            if (rActive) newR.active = true; else newR.active = false;
-            setJoystick({ left: newL, right: newR, pinchDist: 0 });
+
+            if (!foundLeft) touchStateRef.current.leftTouchId = null;
+            if (!foundRight) touchStateRef.current.rightTouchId = null;
+
+            setJoystick(prev => ({
+                left: newL || { active: false, x: 0, y: 0, dx: 0, dy: 0 },
+                right: newR || { active: false, x: 0, y: 0, angle: 0, originX: 0, originY: 0, distance: 0 },
+                pinchDist: touches.length === 2 ? prev.pinchDist : 0
+            }));
         };
 
-        const touchEnd = (e: any) => {
-            if (e.target !== canvasRef.current) return;
-            e.preventDefault();
-            if (e.touches.length === 0) {
-                setJoystick({
-                    left: { active: false, x: 0, y: 0, dx: 0, dy: 0 },
-                    right: { active: false, x: 0, y: 0, angle: 0, originX: 0, originY: 0, distance: 0 },
-                    pinchDist: 0
-                });
-            } else { touchMove(e); }
-        };
+        canvas.addEventListener('touchstart', handleTouch, { passive: false });
+        canvas.addEventListener('touchmove', handleTouch, { passive: false });
+        canvas.addEventListener('touchend', handleTouch, { passive: false });
+        canvas.addEventListener('touchcancel', handleTouch, { passive: false });
 
-        const canvas = canvasRef.current;
-        if (canvas) {
-            canvas.addEventListener('touchstart', (e) => { e.preventDefault(); touchMove(e); }, { passive: false });
-            canvas.addEventListener('touchmove', touchMove, { passive: false });
-            canvas.addEventListener('touchend', touchEnd, { passive: false });
-            canvas.addEventListener('touchcancel', touchEnd, { passive: false });
-            return () => {
-                canvas.removeEventListener('touchstart', touchMove);
-                canvas.removeEventListener('touchmove', touchMove);
-                canvas.removeEventListener('touchend', touchEnd);
-            }
-        }
-    }, [settings.isMobile, settings.joystickScale, uiState.isPlaying, uiState.isPaused, joystick]);
+        return () => {
+            canvas.removeEventListener('touchstart', handleTouch);
+            canvas.removeEventListener('touchmove', handleTouch);
+            canvas.removeEventListener('touchend', handleTouch);
+            canvas.removeEventListener('touchcancel', handleTouch);
+        };
+    }, [settings.isMobile, settings.joystickScale, uiState.isPlaying, uiState.isPaused]);
+
 
     // === RENDER ENGINE (Hybrid 2D/3D) ===
     const drawSprite = (ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, depth: number, angle: number, textureType: any, colorTop: any, colorSide: any, isBot: boolean, zOffset = 0, alpha = 1, frameCount = 0, isSprite = false, animState = 'idle', framesConfig: number[] = [8, 8, 8], flipX = false) => {
@@ -2174,7 +2186,11 @@ export default function PixShotMega() {
     ];
 
     return (
-        <div className="relative w-full h-full overflow-hidden bg-slate-950 select-none font-sans text-slate-100 touch-none" style={{ padding: 'var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left)' }}>
+        <div className="relative w-full h-full overflow-hidden bg-slate-950 select-none font-sans text-slate-100 touch-none" 
+             style={{ 
+                 padding: 'var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left)',
+                 fontSize: `${settings.uiScale * 100}%` 
+             }}>
             <canvas ref={canvasRef} className="fixed inset-0 w-full h-full" style={{ cursor: 'crosshair' }} />
 
             {/* TOAST SYSTEM */}
@@ -2325,187 +2341,154 @@ export default function PixShotMega() {
                 </div>
             )}
 
-            {/* MAIN MENU & GAME OVER - top buttons removed, party stays */}
+            {/* MAIN MENU & GAME OVER */}
             {(!uiState.isPlaying || uiState.isGameOver) && !uiState.showAuth && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center z-50 overflow-hidden pointer-events-auto bg-slate-950/40">
-                    <div className="absolute inset-0 opacity-20 pointer-events-none" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)', backgroundSize: '40px 40px' }}></div>
-                    
-                    <div className="absolute inset-0 flex flex-col pointer-events-none fixed z-0">
-                        <div className="flex-1 bg-gradient-to-b from-slate-900/80 to-transparent"></div>
-                        <div className="flex-1 bg-gradient-to-t from-slate-950 to-transparent"></div>
-                    </div>
+                    <div className="absolute inset-0 z-0 origin-center transition-transform duration-500 flex items-center justify-center" style={{ transform: `scale(${settings.uiScale})` }}>
+                        <div className="w-[95%] max-w-[1200px] z-10 flex flex-col md:flex-row gap-6 md:gap-16 py-10 items-center justify-center min-h-screen">
+                            {/* LEFT PANEL: HERO SHOWCASE */}
+                            <div className="flex-1 flex flex-col items-center justify-center pt-8 md:pt-0 pointer-events-none">
+                                <h1 className="text-5xl md:text-8xl font-black text-transparent bg-clip-text bg-gradient-to-b from-cyan-400 to-blue-600 tracking-tighter drop-shadow-[0_0_30px_rgba(6,182,212,0.4)] mb-2 md:mb-4 text-center z-10 uppercase w-full">PixShot.io</h1>
+                                
+                                <div className="z-10 mb-4 md:mb-10 flex items-center gap-2 bg-slate-900/60 px-3 py-1 rounded-full border border-slate-700/50 backdrop-blur-sm pointer-events-auto">
+                                    <div className={`w-1.5 h-1.5 rounded-full animate-pulse ${connStatus === 'Connected' ? 'bg-emerald-400 shadow-[0_0_10px_#10b981]' : connStatus === 'Connecting' ? 'bg-amber-400 shadow-[0_0_10px_#f59e0b]' : 'bg-red-500 shadow-[0_0_10px_#ef4444]'}`}></div>
+                                    <span className={`text-[8px] md:text-[10px] font-black uppercase tracking-[0.2em] ${connStatus === 'Connected' ? 'text-emerald-400' : connStatus === 'Connecting' ? 'text-amber-400' : 'text-red-400'}`}>Server: {connStatus}</span>
+                                </div>
 
-                    <div className="w-[95%] max-w-[1200px] z-10 flex flex-col md:flex-row gap-6 md:gap-16 py-10 items-center justify-center min-h-screen">
-                        
-                        {/* LEFT PANEL: HERO SHOWCASE */}
-                        <div className="flex-1 flex flex-col items-center justify-center pt-8 md:pt-0 pointer-events-none">
-                            <h1 className="text-5xl md:text-8xl font-black text-transparent bg-clip-text bg-gradient-to-b from-cyan-400 to-blue-600 tracking-tighter drop-shadow-[0_0_30px_rgba(6,182,212,0.4)] mb-2 md:mb-4 text-center z-10 uppercase w-full">PixShot.io</h1>
-                            
-                            <div className="z-10 mb-4 md:mb-10 flex items-center gap-2 bg-slate-900/60 px-3 py-1 rounded-full border border-slate-700/50 backdrop-blur-sm pointer-events-auto">
-                                <div className={`w-1.5 h-1.5 rounded-full animate-pulse ${connStatus === 'Connected' ? 'bg-emerald-400 shadow-[0_0_10px_#10b981]' : connStatus === 'Connecting' ? 'bg-amber-400 shadow-[0_0_10px_#f59e0b]' : 'bg-red-500 shadow-[0_0_10px_#ef4444]'}`}></div>
-                                <span className={`text-[8px] md:text-[10px] font-black uppercase tracking-[0.2em] ${connStatus === 'Connected' ? 'text-emerald-400' : connStatus === 'Connecting' ? 'text-amber-400' : 'text-red-400'}`}>Server: {connStatus}</span>
+                                {!uiState.isGameOver && (
+                                    <div className="relative w-48 h-48 md:w-80 md:h-80 mx-auto z-10 flex items-center justify-center group cursor-pointer pointer-events-auto" onClick={() => setUiState(p => ({ ...p, showShop: true }))}>
+                                        <div className="absolute inset-0 bg-cyan-500/10 rounded-full blur-3xl animate-pulse group-hover:bg-cyan-500/20 transition-all"></div>
+                                        <img src={`/${uiState.playerClass === 'basic' ? 'biasa' : uiState.playerClass === 'warden' ? 'miaw' : uiState.playerClass === 'necromancer' ? 'necro' : 'tank_' + uiState.playerClass}.png`} alt="Hero Tank" className="w-full h-full object-contain relative z-10 animate-[pulse_4s_ease-in-out_infinite] group-hover:scale-110 transition-transform duration-500 drop-shadow-[0_20px_20px_rgba(0,0,0,0.8)] filter contrast-125" />
+                                        <div className="absolute bottom-0 md:-bottom-4 px-4 py-1.5 bg-slate-900/80 backdrop-blur border border-slate-700 rounded-full text-[10px] md:text-xs font-bold text-slate-300 uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity translate-y-2 group-hover:translate-y-0">Change Class</div>
+                                    </div>
+                                )}
+
+                                {!uiState.isGameOver && (
+                                    <div className="flex items-center gap-2 md:gap-4 mt-4 md:mt-10 z-10 flex-wrap justify-center bg-slate-900/50 backdrop-blur-md p-2 md:p-4 rounded-2xl md:rounded-3xl border border-slate-800 shadow-xl w-full max-w-sm md:max-w-md pointer-events-auto">
+                                        <button onClick={() => setUiState(p => ({ ...p, showShop: true }))} className="flex-1 min-w-[80px] md:min-w-[100px] bg-amber-600/10 border border-amber-500/30 px-2 md:px-6 py-2 md:py-3 rounded-xl md:rounded-2xl font-black text-[10px] md:text-base hover:bg-amber-600/30 hover:border-amber-400 text-amber-400 tracking-widest uppercase transition-all flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2"><span className="text-base md:text-xl">🛒</span> Arsenal</button>
+                                        <div className="flex flex-col items-center justify-center px-2 md:px-4 border-slate-700 border-x">
+                                            <span className="text-[8px] md:text-xs text-slate-400 uppercase tracking-widest font-bold">Credits</span>
+                                            <span className="text-lg md:text-2xl font-black font-mono text-amber-400">{globalProfile.coins} <span className="text-xs md:text-sm">🪙</span></span>
+                                        </div>
+                                        <button onClick={() => setUiState(p => ({ ...p, showProfile: true }))} className="flex-1 min-w-[80px] md:min-w-[100px] bg-cyan-600/10 border border-cyan-500/30 px-2 md:px-6 py-2 md:py-3 rounded-xl md:rounded-2xl font-black text-[10px] md:text-base hover:bg-cyan-600/30 hover:border-cyan-400 text-cyan-400 tracking-widest uppercase transition-all flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2"><span className="text-base md:text-xl">👤</span> Profile</button>
+                                    </div>
+                                )}
+
+                                {uiState.isGameOver && (
+                                    <div className="z-10 flex flex-col items-center gap-6 max-w-sm w-full pointer-events-auto">
+                                        <h2 className="text-4xl font-black text-red-500 uppercase tracking-widest drop-shadow-[0_0_15px_rgba(239,68,68,0.8)]">Decimated</h2>
+                                        <div className="grid grid-cols-2 gap-3 w-full">
+                                            <div className="bg-slate-800 rounded-xl p-3 border border-slate-700 text-center">
+                                                <div className="text-[10px] md:text-xs text-slate-400 uppercase font-bold tracking-widest mb-1">Score</div>
+                                                <div className="text-xl md:text-2xl font-black text-white font-mono">{uiState.score}</div>
+                                            </div>
+                                            <div className="bg-slate-800 rounded-xl p-3 border border-slate-700 text-center">
+                                                <div className="text-[10px] md:text-xs text-slate-400 uppercase font-bold tracking-widest mb-1">Earned</div>
+                                                <div className="text-xl md:text-2xl font-black text-amber-400 font-mono">+{uiState.inGameCoins}</div>
+                                            </div>
+                                        </div>
+                                        <button onClick={exitToMainMenu} className="text-white font-bold uppercase tracking-widest bg-slate-800 hover:bg-slate-700 px-8 py-4 rounded-xl w-full border border-slate-600 transiton-all shadow-lg active:scale-95">Back To HQ</button>
+                                    </div>
+                                )}
                             </div>
 
-                            {!uiState.isGameOver && (
-                                <div className="relative w-48 h-48 md:w-80 md:h-80 mx-auto z-10 flex items-center justify-center group cursor-pointer pointer-events-auto" onClick={() => setUiState(p => ({ ...p, showShop: true }))}>
-                                    <div className="absolute inset-0 bg-cyan-500/10 rounded-full blur-3xl animate-pulse group-hover:bg-cyan-500/20 transition-all"></div>
-                                    <img src={`/${uiState.playerClass === 'basic' ? 'biasa' : uiState.playerClass === 'warden' ? 'miaw' : uiState.playerClass === 'necromancer' ? 'necro' : 'tank_' + uiState.playerClass}.png`} alt="Hero Tank" className="w-full h-full object-contain relative z-10 animate-[pulse_4s_ease-in-out_infinite] group-hover:scale-110 transition-transform duration-500 drop-shadow-[0_20px_20px_rgba(0,0,0,0.8)] filter contrast-125" />
-                                    <div className="absolute bottom-0 md:-bottom-4 px-4 py-1.5 bg-slate-900/80 backdrop-blur border border-slate-700 rounded-full text-[10px] md:text-xs font-bold text-slate-300 uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity translate-y-2 group-hover:translate-y-0">Change Class</div>
-                                </div>
-                            )}
-
-                            {!uiState.isGameOver && (
-                                <div className="flex items-center gap-2 md:gap-4 mt-4 md:mt-10 z-10 flex-wrap justify-center bg-slate-900/50 backdrop-blur-md p-2 md:p-4 rounded-2xl md:rounded-3xl border border-slate-800 shadow-xl w-full max-w-sm md:max-w-md pointer-events-auto">
-                                    <button onClick={() => setUiState(p => ({ ...p, showShop: true }))} className="flex-1 min-w-[80px] md:min-w-[100px] bg-amber-600/10 border border-amber-500/30 px-2 md:px-6 py-2 md:py-3 rounded-xl md:rounded-2xl font-black text-[10px] md:text-base hover:bg-amber-600/30 hover:border-amber-400 text-amber-400 tracking-widest uppercase transition-all flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2"><span className="text-base md:text-xl">🛒</span> Arsenal</button>
-                                    <div className="flex flex-col items-center justify-center px-2 md:px-4 border-slate-700 border-x">
-                                        <span className="text-[8px] md:text-xs text-slate-400 uppercase tracking-widest font-bold">Credits</span>
-                                        <span className="text-lg md:text-2xl font-black font-mono text-amber-400">{globalProfile.coins} <span className="text-xs md:text-sm">🪙</span></span>
-                                    </div>
-                                    <button onClick={() => setUiState(p => ({ ...p, showProfile: true }))} className="flex-1 min-w-[80px] md:min-w-[100px] bg-cyan-600/10 border border-cyan-500/30 px-2 md:px-6 py-2 md:py-3 rounded-xl md:rounded-2xl font-black text-[10px] md:text-base hover:bg-cyan-600/30 hover:border-cyan-400 text-cyan-400 tracking-widest uppercase transition-all flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2"><span className="text-base md:text-xl">👤</span> Profile</button>
-                                </div>
-                            )}
-
-                            {uiState.isGameOver && (
-                                <div className="z-10 flex flex-col items-center gap-6 max-w-sm w-full pointer-events-auto">
-                                    <h2 className="text-4xl font-black text-red-500 uppercase tracking-widest drop-shadow-[0_0_15px_rgba(239,68,68,0.8)]">Decimated</h2>
-                                    <div className="grid grid-cols-2 gap-3 w-full">
-                                        <div className="bg-slate-800 rounded-xl p-3 border border-slate-700 text-center">
-                                            <div className="text-[10px] md:text-xs text-slate-400 uppercase font-bold tracking-widest mb-1">Score</div>
-                                            <div className="text-xl md:text-2xl font-black text-white font-mono">{uiState.score}</div>
+                            {/* RIGHT PANEL: MODES & ACTION */}
+                            <div className="flex-1 flex flex-col justify-end max-w-md mx-auto w-full z-10 pb-4 md:pb-0 pointer-events-auto">
+                                {!uiState.isGameOver && (
+                                    <div className="bg-slate-900/80 backdrop-blur-xl border border-slate-700 rounded-3xl p-4 md:p-8 shadow-2xl flex flex-col gap-3 md:gap-4">
+                                        <div className="flex justify-between items-center mb-1 md:mb-2">
+                                            <div className="text-[10px] md:text-xs text-slate-400 font-bold uppercase tracking-[0.2em]">Select Operation</div>
+                                            <div className="flex gap-2">
+                                                <button onClick={() => setUiState(p => ({ ...p, showFriends: true }))} className="text-xs md:text-lg bg-slate-800 hover:bg-slate-700 text-white rounded-full w-8 h-8 flex items-center justify-center border border-slate-600 relative">👥{(friendRequests.length > 0) && <span className="absolute -top-1 -right-1 bg-red-500 text-[8px] w-3 h-3 rounded-full flex items-center justify-center">{friendRequests.length}</span>}</button>
+                                                <button onClick={() => setUiState(p => ({ ...p, showSettings: true }))} className="text-xs md:text-lg bg-slate-800 hover:bg-slate-700 text-white rounded-full w-8 h-8 flex items-center justify-center border border-slate-600">⚙️</button>
+                                            </div>
                                         </div>
-                                        <div className="bg-slate-800 rounded-xl p-3 border border-slate-700 text-center">
-                                            <div className="text-[10px] md:text-xs text-slate-400 uppercase font-bold tracking-widest mb-1">Earned</div>
-                                            <div className="text-xl md:text-2xl font-black text-amber-400 font-mono">+{uiState.inGameCoins}</div>
+
+                                        <div className="grid grid-cols-2 gap-3 md:gap-4">
+                                            <button onClick={() => setUiState(p => ({ ...p, gameMode: 'normal' }))} className={`group relative overflow-hidden rounded-2xl border ${uiState.gameMode === 'normal' ? 'border-cyan-400 bg-cyan-900/40' : 'border-slate-700 bg-slate-800/80 hover:bg-slate-700'}`}>
+                                                <div className="p-2 md:p-4 flex flex-col items-center justify-center gap-1 md:gap-2 relative z-10 h-full">
+                                                    <span className={`text-xl md:text-2xl ${uiState.gameMode === 'normal' ? 'text-cyan-400' : 'text-slate-400'}`}>🌍</span>
+                                                    <span className={`font-black uppercase tracking-wider text-[9px] md:text-sm ${uiState.gameMode === 'normal' ? 'text-white' : 'text-slate-300'}`}>Survival</span>
+                                                </div>
+                                            </button>
+                                            <button onClick={() => setUiState(p => ({ ...p, gameMode: 'battleroyale', showServerBrowser: true, targetRoomId: null }))} className={`group relative overflow-hidden rounded-2xl border ${uiState.gameMode === 'battleroyale' ? 'border-red-400 bg-red-900/40' : 'border-slate-700 bg-slate-800/80 hover:bg-slate-700'}`}>
+                                                <div className="p-2 md:p-4 flex flex-col items-center justify-center gap-1 md:gap-2 relative z-10 h-full">
+                                                    <span className={`text-xl md:text-2xl ${uiState.gameMode === 'battleroyale' ? 'text-red-400' : 'text-slate-400'}`}>🪂</span>
+                                                    <span className={`font-black uppercase tracking-wider text-[9px] md:text-sm ${uiState.gameMode === 'battleroyale' ? 'text-white' : 'text-slate-300'}`}>B. Royale</span>
+                                                </div>
+                                            </button>
+                                            <button onClick={() => setUiState(p => ({ ...p, gameMode: 'pvp1v1', showServerBrowser: true, targetRoomId: null }))} className={`group relative overflow-hidden rounded-2xl border ${uiState.gameMode === 'pvp1v1' ? 'border-purple-400 bg-purple-900/40' : 'border-slate-700 bg-slate-800/80 hover:bg-slate-700'}`}>
+                                                <div className="p-2 md:p-4 flex flex-col items-center justify-center gap-1 md:gap-2 relative z-10 h-full">
+                                                    <span className={`text-xl md:text-2xl ${uiState.gameMode === 'pvp1v1' ? 'text-purple-400' : 'text-slate-400'}`}>⚔️</span>
+                                                    <span className={`font-black uppercase tracking-wider text-[9px] md:text-sm ${uiState.gameMode === 'pvp1v1' ? 'text-white' : 'text-slate-300'}`}>1v1 Arena</span>
+                                                </div>
+                                            </button>
+                                            <button onClick={() => setUiState(p => ({ ...p, gameMode: 'god' }))} className={`group relative overflow-hidden rounded-2xl border ${uiState.gameMode === 'god' ? 'border-amber-400 bg-amber-900/40' : 'border-slate-700 bg-slate-800/80 hover:bg-slate-700'}`}>
+                                                <div className="p-2 md:p-4 flex flex-col items-center justify-center gap-1 md:gap-2 relative z-10 h-full">
+                                                    <span className={`text-xl md:text-2xl ${uiState.gameMode === 'god' ? 'text-amber-400' : 'text-slate-400'}`}>⚚</span>
+                                                    <span className={`font-black uppercase tracking-wider text-[9px] md:text-sm ${uiState.gameMode === 'god' ? 'text-white' : 'text-slate-300'}`}>God Mode</span>
+                                                </div>
+                                            </button>
                                         </div>
-                                    </div>
-                                    <button onClick={exitToMainMenu} className="text-white font-bold uppercase tracking-widest bg-slate-800 hover:bg-slate-700 px-8 py-4 rounded-xl w-full border border-slate-600 transiton-all shadow-lg active:scale-95">Back To HQ</button>
-                                </div>
-                            )}
-                        </div>
 
-                        {/* RIGHT PANEL: MODES & ACTION */}
-                        <div className="flex-1 flex flex-col justify-end max-w-md mx-auto w-full z-10 pb-4 md:pb-0 pointer-events-auto">
-                            {!uiState.isGameOver && (
-                                <div className="bg-slate-900/80 backdrop-blur-xl border border-slate-700 rounded-3xl p-4 md:p-8 shadow-2xl flex flex-col gap-3 md:gap-4">
-                                    <div className="flex justify-between items-center mb-1 md:mb-2">
-                                        <div className="text-[10px] md:text-xs text-slate-400 font-bold uppercase tracking-[0.2em]">Select Operation</div>
-                                        <div className="flex gap-2">
-                                            <button onClick={() => setUiState(p => ({ ...p, showFriends: true }))} className="text-xs md:text-lg bg-slate-800 hover:bg-slate-700 text-white rounded-full w-8 h-8 flex items-center justify-center border border-slate-600 relative">👥{(friendRequests.length > 0) && <span className="absolute -top-1 -right-1 bg-red-500 text-[8px] w-3 h-3 rounded-full flex items-center justify-center">{friendRequests.length}</span>}</button>
-                                            <button onClick={() => setUiState(p => ({ ...p, showSettings: true }))} className="text-xs md:text-lg bg-slate-800 hover:bg-slate-700 text-white rounded-full w-8 h-8 flex items-center justify-center border border-slate-600">⚙️</button>
+                                        <div className="flex items-center gap-2 mt-2 w-full">
+                                            <button onClick={() => { setUiState(p => ({ ...p, showFriends: true })); setFriendTab('all'); }} className="flex-1 py-3 bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/50 text-indigo-400 rounded-xl font-bold uppercase tracking-widest text-[10px] md:text-sm transition-all shadow-md flex items-center justify-center gap-2">
+                                                <span className="text-sm">➕</span> Party
+                                            </button>
                                         </div>
-                                    </div>
 
-                                    <div className="grid grid-cols-2 gap-3 md:gap-4">
-                                        <button onClick={() => setUiState(p => ({ ...p, gameMode: 'normal' }))} className={`group relative overflow-hidden rounded-2xl border ${uiState.gameMode === 'normal' ? 'border-cyan-400 bg-cyan-900/40' : 'border-slate-700 bg-slate-800/80 hover:bg-slate-700'}`}>
-                                            <div className="p-2 md:p-4 flex flex-col items-center justify-center gap-1 md:gap-2 relative z-10 h-full">
-                                                <span className={`text-xl md:text-2xl ${uiState.gameMode === 'normal' ? 'text-cyan-400' : 'text-slate-400'}`}>🌍</span>
-                                                <span className={`font-black uppercase tracking-wider text-[9px] md:text-sm ${uiState.gameMode === 'normal' ? 'text-white' : 'text-slate-300'}`}>Survival</span>
-                                            </div>
-                                        </button>
-                                        <button onClick={() => setUiState(p => ({ ...p, gameMode: 'battleroyale', showServerBrowser: true, targetRoomId: null }))} className={`group relative overflow-hidden rounded-2xl border ${uiState.gameMode === 'battleroyale' ? 'border-red-400 bg-red-900/40' : 'border-slate-700 bg-slate-800/80 hover:bg-slate-700'}`}>
-                                            <div className="p-2 md:p-4 flex flex-col items-center justify-center gap-1 md:gap-2 relative z-10 h-full">
-                                                <span className={`text-xl md:text-2xl ${uiState.gameMode === 'battleroyale' ? 'text-red-400' : 'text-slate-400'}`}>🪂</span>
-                                                <span className={`font-black uppercase tracking-wider text-[9px] md:text-sm ${uiState.gameMode === 'battleroyale' ? 'text-white' : 'text-slate-300'}`}>B. Royale</span>
-                                            </div>
-                                        </button>
-                                        <button onClick={() => setUiState(p => ({ ...p, gameMode: 'pvp1v1', showServerBrowser: true, targetRoomId: null }))} className={`group relative overflow-hidden rounded-2xl border ${uiState.gameMode === 'pvp1v1' ? 'border-purple-400 bg-purple-900/40' : 'border-slate-700 bg-slate-800/80 hover:bg-slate-700'}`}>
-                                            <div className="p-2 md:p-4 flex flex-col items-center justify-center gap-1 md:gap-2 relative z-10 h-full">
-                                                <span className={`text-xl md:text-2xl ${uiState.gameMode === 'pvp1v1' ? 'text-purple-400' : 'text-slate-400'}`}>⚔️</span>
-                                                <span className={`font-black uppercase tracking-wider text-[9px] md:text-sm ${uiState.gameMode === 'pvp1v1' ? 'text-white' : 'text-slate-300'}`}>1v1 Arena</span>
-                                            </div>
-                                        </button>
-                                        <button onClick={() => setUiState(p => ({ ...p, gameMode: 'god' }))} className={`group relative overflow-hidden rounded-2xl border ${uiState.gameMode === 'god' ? 'border-amber-400 bg-amber-900/40' : 'border-slate-700 bg-slate-800/80 hover:bg-slate-700'}`}>
-                                            <div className="p-2 md:p-4 flex flex-col items-center justify-center gap-1 md:gap-2 relative z-10 h-full">
-                                                <span className={`text-xl md:text-2xl ${uiState.gameMode === 'god' ? 'text-amber-400' : 'text-slate-400'}`}>⚚</span>
-                                                <span className={`font-black uppercase tracking-wider text-[9px] md:text-sm ${uiState.gameMode === 'god' ? 'text-white' : 'text-slate-300'}`}>God Mode</span>
-                                            </div>
+                                        <button onClick={() => {
+                                            if (party.length > 0 && party.some(p => p.isReady === false)) { alert("All party members must be Ready!"); return; }
+                                            if (uiState.gameMode === 'battleroyale' || uiState.gameMode === 'pvp1v1') { setUiState(p => ({ ...p, showServerBrowser: true })); socketRef.current?.emit('br:get_rooms'); } else { startGame(uiState.gameMode); }
+                                        }} className="w-full mt-2 py-5 md:py-6 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 border border-cyan-400/50 rounded-2xl font-black text-lg md:text-2xl uppercase tracking-[0.2em] shadow-[0_0_30px_rgba(6,182,212,0.4)] transition-all text-white relative overflow-hidden group">
+                                            <span className="relative z-10">{uiState.gameMode === 'battleroyale' || uiState.gameMode === 'pvp1v1' ? 'FIND MATCH' : 'DEPLOY TANK'}</span>
                                         </button>
                                     </div>
-
-                                    <div className="flex items-center gap-2 mt-2 w-full">
-                                        <button onClick={() => { setUiState(p => ({ ...p, showFriends: true })); setFriendTab('all'); }} className="flex-1 py-3 bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/50 text-indigo-400 rounded-xl font-bold uppercase tracking-widest text-[10px] md:text-sm transition-all shadow-md flex items-center justify-center gap-2">
-                                            <span className="text-sm">➕</span> Party
-                                        </button>
-                                    </div>
-
-                                    <button onClick={() => {
-                                        if (party.length > 0 && party.some(p => p.isReady === false)) { alert("All party members must be Ready!"); return; }
-                                        if (uiState.gameMode === 'battleroyale' || uiState.gameMode === 'pvp1v1') { setUiState(p => ({ ...p, showServerBrowser: true })); socketRef.current?.emit('br:get_rooms'); } else { startGame(uiState.gameMode); }
-                                    }} className="w-full mt-2 py-5 md:py-6 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 border border-cyan-400/50 rounded-2xl font-black text-lg md:text-2xl uppercase tracking-[0.2em] shadow-[0_0_30px_rgba(6,182,212,0.4)] transition-all text-white relative overflow-hidden group">
-                                        <span className="relative z-10">{uiState.gameMode === 'battleroyale' || uiState.gameMode === 'pvp1v1' ? 'FIND MATCH' : 'DEPLOY TANK'}</span>
-                                    </button>
-                                </div>
-                            )}
+                                )}
+                            </div>
                         </div>
                     </div>
-
-                    {!uiState.isGameOver && (
-                        <p className="absolute bottom-6 left-1/2 -translate-x-1/2 text-slate-500/80 font-mono tracking-widest text-[10px] uppercase hidden md:block z-10">Developed by Hafiz Wrg &bull; v1.0.6</p>
-                    )}
                 </div>
             )}
+
 
             {/* SERVER BROWSER MENU */}
             {uiState.showServerBrowser && (
                 <div className="absolute inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[80] pointer-events-auto">
-                    <div className="bg-slate-900 p-8 rounded-3xl border border-cyan-500/50 w-[90%] md:w-[800px] shadow-[0_0_80px_rgba(6,182,212,0.2)] flex flex-col gap-6 max-h-[90vh] overflow-hidden">
-                        <div className="flex justify-between items-center border-b border-slate-800 pb-4 shrink-0">
-                            <h2 className="text-2xl font-black text-cyan-400 tracking-widest uppercase flex items-center gap-3">🌐 Server Browser</h2>
-                            <div className="flex gap-4">
-                                <button onClick={() => socketRef.current?.emit('br:get_rooms')} className="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-xl border border-slate-600 font-bold transition-colors">🔄 Refresh</button>
-                                <button onClick={() => setUiState(p => ({ ...p, showServerBrowser: false }))} className="text-slate-500 hover:text-white text-xl font-bold bg-slate-800 hover:bg-red-500/20 px-4 rounded-xl border border-slate-600 hover:border-red-500/50 transition-colors">✕</button>
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-12 text-xs font-black text-slate-500 uppercase tracking-widest px-4 pb-2 border-b border-slate-800 shrink-0">
-                            <div className="col-span-5">Server Region ID</div>
-                            <div className="col-span-1 text-center">Mode</div>
-                            <div className="col-span-3 text-center">Status</div>
-                            <div className="col-span-2 text-center">Players</div>
-                            <div className="col-span-2 text-right">Action</div>
-                        </div>
-
-                        <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-2">
-                            {serverList.filter(srv => srv.mode === uiState.gameMode).length === 0 && <div className="text-center text-slate-500 font-bold mt-10">No active {uiState.gameMode === 'pvp1v1' ? 'PvP1v1' : 'Battle Royale'} servers found. Be the first to start a match!</div>}
-
-                            {serverList.filter(srv => srv.mode === uiState.gameMode).map((srv, i) => (
-                                <div key={srv.id} className="grid grid-cols-12 items-center bg-slate-800/50 p-4 rounded-xl border border-slate-700/50 hover:bg-slate-800 hover:border-cyan-500/30 transition-all">
-                                    <div className="col-span-4 font-mono text-white text-sm truncate pr-4">{srv.id}</div>
-                                    <div className="col-span-1 text-center font-bold text-slate-400 text-[10px] uppercase">
-                                        {srv.mode === 'pvp1v1' ? <span className="text-purple-400 border border-purple-500/30 bg-purple-500/10 px-1 py-0.5 rounded">1v1 PvP</span> : <span className="text-red-400 border border-red-500/30 bg-red-500/10 px-1 py-0.5 rounded">BR</span>}
-                                    </div>
-                                    <div className="col-span-3 text-center font-bold">
-                                        <span className={`px-2 py-1 rounded text-[10px] uppercase ${srv.state === 'Waiting' ? 'bg-emerald-500/20 text-emerald-400' : srv.state === 'Starting' ? 'bg-amber-500/20 text-amber-400' : 'bg-red-500/20 text-red-400'}`}>{srv.state}</span>
-                                    </div>
-                                    <div className="col-span-2 text-center font-mono">
-                                        <div className="text-cyan-400 font-bold">{srv.players} / {srv.max}</div>
-                                        {srv.state !== 'Started' && <div className="text-[10px] text-emerald-400 font-bold tracking-tighter">✔️ {srv.readyCount} Ready</div>}
-                                    </div>
-                                    <div className="col-span-2 text-right">
-                                        <button disabled={srv.locked} onClick={() => {
-                                            setUiState(p => ({ ...p, targetRoomId: srv.id, showServerBrowser: false }));
-                                            if (party.length > 0) {
-                                                const members = party.map(p => p.uid); members.push(auth.uid);
-                                                socketRef.current?.emit('party:start_game', { partyMembers: members, mode: srv.mode || 'battleroyale' });
-                                            } else {
-                                                startGame(srv.mode || 'battleroyale', srv.id);
-                                            }
-                                        }} className="bg-cyan-600 hover:bg-cyan-500 disabled:bg-slate-700 disabled:text-slate-500 text-white font-bold py-2 px-4 rounded-lg uppercase text-xs w-full shadow-lg">Join</button>
-                                    </div>
+                    <div className="origin-center transition-transform duration-500 w-full flex items-center justify-center p-4" style={{ transform: `scale(${settings.uiScale})` }}>
+                        <div className="bg-slate-900 p-6 md:p-8 rounded-3xl border border-cyan-500/50 w-full max-w-3xl shadow-[0_0_80px_rgba(6,182,212,0.2)] flex flex-col gap-6 max-h-[85vh] overflow-hidden">
+                            <div className="flex justify-between items-center border-b border-slate-800 pb-4 shrink-0">
+                                <h2 className="text-xl md:text-2xl font-black text-cyan-400 tracking-widest uppercase flex items-center gap-3">🌐 Server Browser</h2>
+                                <div className="flex gap-4">
+                                    <button onClick={() => socketRef.current?.emit('br:get_rooms')} className="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-xl border border-slate-600 font-bold transition-colors text-xs md:text-sm">🔄 Refresh</button>
+                                    <button onClick={() => setUiState(p => ({ ...p, showServerBrowser: false }))} className="text-slate-500 hover:text-white bg-slate-800 hover:bg-red-500/20 px-4 rounded-xl border border-slate-600 hover:border-red-500/50 transition-colors text-lg font-bold">✕</button>
                                 </div>
-                            ))}
-                        </div>
+                            </div>
 
-                        <div className="shrink-0 pt-4 border-t border-slate-800">
-                            <button onClick={() => {
-                                setUiState(p => ({ ...p, targetRoomId: null, showServerBrowser: false }));
-                                if (party.length > 0) {
-                                    const members = party.map(p => p.uid); members.push(auth.uid);
-                                    socketRef.current?.emit('party:start_game', { partyMembers: members, mode: uiState.gameMode === 'pvp1v1' ? 'pvp1v1' : 'battleroyale' });
-                                } else {
-                                    startGame(uiState.gameMode === 'pvp1v1' ? 'pvp1v1' : 'battleroyale');
-                                }
-                            }} className="w-full bg-red-600/90 hover:bg-red-500 border border-red-400 py-4 rounded-xl font-black text-xl text-white uppercase shadow-[0_0_20px_rgba(220,38,38,0.4)]">🚀 Quick Match / Create Lobby</button>
+                            <div className="grid grid-cols-12 text-[10px] font-black text-slate-500 uppercase tracking-widest px-4 pb-2 border-b border-slate-800 shrink-0">
+                                <div className="col-span-6">Region ID</div>
+                                <div className="col-span-3 text-center">Players</div>
+                                <div className="col-span-3 text-right">Action</div>
+                            </div>
+
+                            <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-2 p-1">
+                                {serverList.filter(s => s.mode === uiState.gameMode).length === 0 && (
+                                    <div className="text-center text-slate-500 font-bold py-10 opacity-50">No active {uiState.gameMode} servers.</div>
+                                )}
+                                {serverList.filter(s => s.mode === uiState.gameMode).map(srv => (
+                                    <div key={srv.id} className="grid grid-cols-12 items-center bg-slate-800/40 p-4 rounded-xl border border-slate-800/50 hover:bg-slate-800 hover:border-cyan-500/30 transition-all">
+                                        <div className="col-span-6 font-mono text-white text-xs truncate pr-4">{srv.id}</div>
+                                        <div className="col-span-3 text-center text-cyan-400 font-mono font-bold">{srv.players}/{srv.max}</div>
+                                        <div className="col-span-3">
+                                            <button onClick={() => startGame(srv.mode || 'battleroyale', srv.id)} className="w-full py-2 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-xl text-[10px] uppercase shadow-lg">Join</button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div className="shrink-0 pt-4 border-t border-slate-800">
+                                <button onClick={() => startGame(uiState.gameMode === 'pvp1v1' ? 'pvp1v1' : 'battleroyale')} className="w-full bg-red-600 hover:bg-red-500 text-white font-black py-4 rounded-2xl uppercase tracking-widest shadow-xl">Quick Start / New Lobby</button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -2514,32 +2497,22 @@ export default function PixShotMega() {
             {/* LEADERBOARD MENU */}
             {uiState.showLeaderboard && (
                 <div className="absolute inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[80] pointer-events-auto">
-                    <div className="bg-slate-900 p-8 rounded-3xl border border-amber-500/50 w-[90%] max-w-lg shadow-[0_0_50px_rgba(245,158,11,0.15)] flex flex-col gap-6 max-h-[90vh] overflow-y-auto custom-scrollbar">
-                        <div className="flex justify-between items-center border-b border-slate-800 pb-4">
-                            <h2 className="text-2xl font-black text-amber-400 tracking-widest uppercase flex items-center gap-3">🏆 Top Players</h2>
-                            <button onClick={() => setUiState(p => ({ ...p, showLeaderboard: false }))} className="text-slate-500 hover:text-white text-xl font-bold">✕</button>
-                        </div>
-                        <div className="flex flex-col gap-3">
-                            <div className="grid grid-cols-12 text-xs font-bold text-slate-500 uppercase tracking-widest px-4 pb-2 border-b border-slate-800">
-                                <div className="col-span-2">Rank</div>
-                                <div className="col-span-5">Commander</div>
-                                <div className="col-span-3 text-right">Score</div>
-                                <div className="col-span-2 text-right">Kills</div>
+                    <div className="origin-center transition-transform duration-500 w-full flex items-center justify-center p-4" style={{ transform: `scale(${settings.uiScale})` }}>
+                        <div className="bg-slate-900 p-8 rounded-3xl border border-amber-500/50 w-full max-w-lg shadow-[0_0_50px_rgba(245,158,11,0.15)] flex flex-col gap-6 max-h-[85vh] overflow-hidden">
+                            <div className="flex justify-between items-center border-b border-slate-800 pb-4 shrink-0">
+                                <h2 className="text-xl md:text-2xl font-black text-amber-400 tracking-widest uppercase flex items-center gap-3">🏆 Top Players</h2>
+                                <button onClick={() => setUiState(p => ({ ...p, showLeaderboard: false }))} className="text-slate-500 hover:text-white text-2xl font-bold">✕</button>
                             </div>
-                            {leaderboard.map((lb, i) => (
-                                <div key={i} className="grid grid-cols-12 items-center bg-slate-800/50 p-4 rounded-xl border border-slate-700/50 hover:bg-slate-800 transition-colors">
-                                    <div className={`col-span-2 font-black text-xl ${i === 0 ? 'text-yellow-400' : i === 1 ? 'text-slate-300' : i === 2 ? 'text-amber-600' : 'text-slate-500'}`}>#{i + 1}</div>
-                                    <div className="col-span-5 font-bold text-white truncate">{lb.username}</div>
-                                    <div className="col-span-3 text-right font-mono text-cyan-400 font-bold">{lb.highscore || lb.score || 0}</div>
-                                    <div className="col-span-2 text-right font-mono text-emerald-400 font-bold">{lb.total_kills || lb.kills || 0}</div>
-                                </div>
-                            ))}
-                            {/* Current Player Rank (Simulated) */}
-                            <div className="grid grid-cols-12 items-center bg-amber-500/10 p-4 rounded-xl border border-amber-500/30 mt-4">
-                                <div className="col-span-2 font-black text-xl text-amber-500">#99+</div>
-                                <div className="col-span-5 font-bold text-white truncate">{auth.username || globalProfile.username} (You)</div>
-                                <div className="col-span-3 text-right font-mono text-cyan-400 font-bold">{globalProfile.highscore}</div>
-                                <div className="col-span-2 text-right font-mono text-emerald-400 font-bold">{globalProfile.totalKills}</div>
+                            <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-2">
+                                {leaderboard.map((lb, i) => (
+                                    <div key={i} className="flex justify-between items-center bg-slate-800/40 p-4 rounded-xl border border-slate-800 hover:bg-slate-800 transition-colors">
+                                        <div className="flex items-center gap-4">
+                                            <span className={`font-black text-lg ${i === 0 ? 'text-amber-400' : 'text-slate-500'}`}>#{i + 1}</span>
+                                            <span className="text-white font-bold">{lb.username}</span>
+                                        </div>
+                                        <span className="text-cyan-400 font-mono font-bold">{lb.highscore || lb.score || 0}</span>
+                                    </div>
+                                ))}
                             </div>
                         </div>
                     </div>
@@ -2549,7 +2522,8 @@ export default function PixShotMega() {
             {/* FRIENDS MENU (Advanced) */}
             {uiState.showFriends && (
                 <div className="absolute inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[80] pointer-events-auto">
-                    <div className="bg-slate-900 p-8 rounded-3xl border border-blue-500/50 w-[90%] max-w-lg shadow-[0_0_50px_rgba(59,130,246,0.15)] flex flex-col max-h-[90vh] overflow-hidden">
+                    <div className="origin-center transition-transform duration-500 w-full flex items-center justify-center p-4" style={{ transform: `scale(${settings.uiScale})` }}>
+                        <div className="bg-slate-900 p-8 rounded-3xl border border-blue-500/50 w-full max-w-lg shadow-[0_0_50px_rgba(59,130,246,0.15)] flex flex-col max-h-[85vh] overflow-hidden">
                         <div className="flex justify-between items-center border-b border-slate-800 pb-4 shrink-0">
                             <h2 className="text-2xl font-black text-blue-400 tracking-widest uppercase flex items-center gap-3">👥 Connections</h2>
                             <button onClick={() => setUiState(p => ({ ...p, showFriends: false }))} className="text-slate-500 hover:text-white text-xl font-bold">✕</button>
@@ -2735,16 +2709,17 @@ export default function PixShotMega() {
                                     </div>
                                 </div>
                             ))}
-                            {friendTab === 'all' && allPlayers.length === 0 && <div className="text-center text-slate-500 py-8 font-bold">No players found.</div>}
                         </div>
                     </div>
                 </div>
+            </div>
             )}
 
             {/* PROFILE MODAL */}
             {uiState.showProfile && (
                 <div className="absolute inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[80] pointer-events-auto">
-                    <div className="bg-slate-900 p-8 rounded-3xl border border-slate-700 w-[90%] max-w-md shadow-2xl flex flex-col gap-6 max-h-[90vh] overflow-y-auto custom-scrollbar">
+                    <div className="origin-center transition-transform duration-500 w-full flex items-center justify-center p-4" style={{ transform: `scale(${settings.uiScale})` }}>
+                        <div className="bg-slate-900 p-8 rounded-3xl border border-slate-700 w-full max-w-md shadow-2xl flex flex-col gap-6 max-h-[85vh] overflow-y-auto custom-scrollbar">
                         <div className="flex justify-between items-center border-b border-slate-800 pb-4">
                             <h2 className="text-xl font-bold text-cyan-400 tracking-widest uppercase">Commander Profile</h2>
                             <button onClick={() => setUiState(p => ({ ...p, showProfile: false }))} className="text-slate-500 hover:text-white text-xl font-bold">✕</button>
@@ -2807,12 +2782,14 @@ export default function PixShotMega() {
                         </div>
                     </div>
                 </div>
+            </div>
             )}
 
             {/* SETTINGS MENU */}
             {uiState.showSettings && (
                 <div className="absolute inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[80] pointer-events-auto">
-                    <div className="bg-slate-900 p-8 rounded-3xl border border-slate-700 w-[90%] max-w-md shadow-2xl flex flex-col gap-6 max-h-[90vh] overflow-y-auto custom-scrollbar">
+                    <div className="origin-center transition-transform duration-500 w-full flex items-center justify-center p-4" style={{ transform: `scale(${settings.uiScale})` }}>
+                        <div className="bg-slate-900 p-8 rounded-3xl border border-slate-700 w-full max-w-md shadow-2xl flex flex-col gap-6 max-h-[85vh] overflow-y-auto custom-scrollbar">
                         <div className="flex justify-between items-center border-b border-slate-800 pb-4">
                             <h2 className="text-xl font-bold text-cyan-400 tracking-widest uppercase">Settings</h2>
                             <button onClick={() => setUiState(p => ({ ...p, showSettings: false }))} className="text-slate-500 hover:text-white text-xl font-bold">✕</button>
@@ -2861,12 +2838,17 @@ export default function PixShotMega() {
                             </div>
 
                             <div className="bg-slate-800/30 p-4 rounded-xl border border-slate-700">
-                                <label className="text-xs text-slate-400 uppercase tracking-wider font-bold block mb-3">UI Scale (HUD): <span className="text-white">{Math.round(settings.uiScale * 100)}%</span></label>
-                                <input type="range" min="0.5" max="1.5" step="0.1" value={settings.uiScale} onChange={(e) => setSettings(p => ({ ...p, uiScale: parseFloat(e.target.value) }))} className="w-full accent-cyan-500" />
+                                <label className="text-xs text-slate-400 uppercase tracking-wider font-bold block mb-3">UI Scale Control: <span className="text-white">{Math.round(settings.uiScale * 100)}%</span></label>
+                                <div className="flex items-center gap-4">
+                                    <button onClick={() => setSettings(p => ({ ...p, uiScale: Math.max(0.5, p.uiScale - 0.1) }))} className="w-10 h-10 bg-slate-700 hover:bg-slate-600 rounded-lg flex items-center justify-center font-bold text-white shadow-md">-</button>
+                                    <input type="range" min="0.5" max="1.5" step="0.1" value={settings.uiScale} onChange={(e) => setSettings(p => ({ ...p, uiScale: parseFloat(e.target.value) }))} className="flex-1 accent-cyan-500" />
+                                    <button onClick={() => setSettings(p => ({ ...p, uiScale: Math.min(1.5, p.uiScale + 0.1) }))} className="w-10 h-10 bg-cyan-600 hover:bg-cyan-500 rounded-lg flex items-center justify-center font-bold text-white shadow-md">+</button>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
+            </div>
             )}
 
             {/* GOD MODE TANK SHOWCASE MODAL */}
