@@ -103,13 +103,17 @@ const httpServer = createServer((req, res) => {
 // Update CORS for production and all-device connectivity
 const io = new Server(httpServer, {
   cors: {
-    origin: "*", // Allow all origins for game connectivity from any device
-    methods: ['GET', 'POST'],
-    credentials: true,
-    allowedHeaders: ["bypass-tunnel-reminder", "Content-Type", "Authorization"]
+    origin: (origin, callback) => callback(null, true), // Allow ANY origin dynamically
+    methods: ['GET', 'POST', 'OPTIONS'],
+    credentials: false
   },
-  transports: ['websocket', 'polling']
+  allowEIO3: true,
+  pingTimeout: 60000,
+  pingInterval: 25000,
+  transports: ['polling', 'websocket']
 });
+
+console.log('[Server] Socket.io initialized with dynamic CORS');
 
 // === SERVER STATE ===
 const brRooms = new Map(); // roomId -> { players: Map<socketId, playerData> }
@@ -152,7 +156,7 @@ function getRoomId(socket, requestedRoomId, mode = 'battleroyale') {
     locked: false,  // Room is closed for new players
     countingDown: false,
     startTime: null, // Will be set when the match officially starts
-    matchDuration: 300000, // 5 minutes in milliseconds for safe zone shrinking
+    matchDuration: is1v1 ? 180000 : 300000, // 3 minutes for PvP, 5 minutes for BR
     createdAt: Date.now() // Track room creation time for bot fill timeout
   });
 
@@ -210,6 +214,7 @@ function broadcastServerList() {
 
 io.on('connection', (socket) => {
   console.log(`[BR] Player connected: ${socket.id}`);
+  broadcastServerList(); // Immediately sync room list to new connection
 
   // === JOIN BATTLE ROYALE ===
   socket.on('br:join', (playerData) => {
@@ -294,6 +299,7 @@ io.on('connection', (socket) => {
 
   // === SERVER LIST & READY CHECK ===
   socket.on('br:get_rooms', () => {
+    console.log(`[Server] ${socket.id} requested room list`);
     broadcastServerList();
   });
 
@@ -602,7 +608,7 @@ setInterval(() => {
 
         // Radius awal WORLD_SIZE, radius akhir 200 (or some minimum)
         const minRadius = 200;
-        const initialRadius = WORLD_SIZE;
+        const initialRadius = room.mapSize || WORLD_SIZE;
         const shrinkAmount = initialRadius - minRadius;
 
         const progress = Math.min(1, elapsed / room.matchDuration);
@@ -652,8 +658,8 @@ setInterval(() => {
           }
         });
       }
-    } else if (room.mode === 'battleroyale' && !room.started && !room.countingDown) {
-      // Battle Royale Bot Auto-Fill Logic
+    } else if ((room.mode === 'battleroyale' || room.mode === 'pvp1v1') && !room.started && !room.countingDown) {
+      // Auto-Fill Logic
       // Apabila dalam waktu 1 menit sudah tak ada lagi pemain masuk maka akan di isi oleh bot
       if (now - room.createdAt >= 60000 && room.players.size > 0 && room.players.size < room.maxRoomPlayers) {
         console.log(`[BR] Room ${roomId} inactive for 1 min. Filling with bots.`);
