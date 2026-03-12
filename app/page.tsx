@@ -161,6 +161,8 @@ export default function PixShotMega() {
     const [addFriendInput, setAddFriendInput] = useState('');
     const [killFeed, setKillFeed] = useState<{ id: number, killer: string, victim: string, time: number }[]>([]);
     const [leaderboard, setLeaderboard] = useState<any[]>([]);
+    const [globalTop, setGlobalTop] = useState<any[]>([]);
+    const [onlineCount, setOnlineCount] = useState(1);
     const [allPlayers, setAllPlayers] = useState<any[]>([]);
     const [friendRequests, setFriendRequests] = useState<any[]>([]);
     const [friendTab, setFriendTab] = useState<'friends' | 'all' | 'requests'>('friends');
@@ -221,7 +223,7 @@ export default function PixShotMega() {
 
     // === GLOBAL PROFILE (Local Storage) ===
     const [globalProfile, setGlobalProfile] = useState({
-        username: 'Guest', uid: `GUEST_${Math.floor(Math.random() * 10000)}`, coins: 0, tokens: 0, highscore: 0, totalKills: 0, matches: 0, ownedClasses: ['basic'], avatar: ''
+        username: 'Guest', uid: `GUEST_${Math.floor(Math.random() * 10000)}`, coins: 0, tokens: 0, highscore: 0, totalKills: 0, matches: 0, ownedClasses: ['basic'], avatar: '', playtime: 0
     });
 
     const [serverList, setServerList] = useState<any[]>([]);
@@ -286,7 +288,18 @@ export default function PixShotMega() {
             if (parsedAuth.isLoggedIn) {
                 setUiState(p => ({ ...p, showAuth: false }));
                 supabase.from('players').select('*').eq('uid', parsedAuth.uid).single().then(({ data }) => {
-                    if (data) setGlobalProfile({ username: data.username, uid: data.uid, coins: data.coins, tokens: data.tokens, highscore: data.highscore, totalKills: data.total_kills, matches: data.matches, ownedClasses: data.owned_classes || ['basic'], avatar: data.avatar || '' });
+                    if (data) setGlobalProfile({ 
+                        username: data.username, 
+                        uid: data.uid, 
+                        coins: data.coins, 
+                        tokens: data.tokens, 
+                        highscore: data.highscore, 
+                        totalKills: data.total_kills, 
+                        matches: data.matches, 
+                        ownedClasses: data.owned_classes || ['basic'], 
+                        avatar: data.avatar || '',
+                        playtime: data.playtime || 0
+                    });
                 });
             }
         } else {
@@ -420,6 +433,15 @@ export default function PixShotMega() {
             setConnStatus('Connected');
             addToast('Connected to Game Server', 'info');
             socketRef.current?.emit('br:get_rooms');
+            
+            // Presence Identify
+            if (globalProfile.uid) {
+                socketRef.current?.emit('player:identify', { 
+                    uid: globalProfile.uid, 
+                    name: globalProfile.username, 
+                    avatar: globalProfile.avatar 
+                });
+            }
         });
 
         socketRef.current.on('disconnect', (reason) => {
@@ -600,6 +622,14 @@ export default function PixShotMega() {
             setKillFeed(prev => [...prev, { id: Math.random(), killer: data.killerName, victim: data.victimName, time: Date.now() }]);
             setUiState(p => ({ ...p, brAlive: data.aliveCount }));
         });
+
+        socketRef.current.on('stats:global_top', (data: any[]) => {
+            setGlobalTop(data);
+        });
+
+        socketRef.current.on('stats:online_count', (count: number) => {
+            setOnlineCount(count);
+        });
         socketRef.current.on('friend:invite_received', (data: any) => {
             if (data.toUid === auth.uid) {
                 addToast(`${data.fromName} invited you to party`, 'invite', {
@@ -668,7 +698,16 @@ export default function PixShotMega() {
     const saveProfile = async (newProfile: any) => {
         setGlobalProfile(newProfile);
         if (auth.isLoggedIn && auth.uid) {
-            await supabase.from('players').update({ coins: newProfile.coins, tokens: newProfile.tokens, highscore: newProfile.highscore, total_kills: newProfile.totalKills, matches: newProfile.matches, owned_classes: newProfile.ownedClasses, avatar: newProfile.avatar }).eq('uid', auth.uid);
+            await supabase.from('players').update({ 
+                coins: newProfile.coins, 
+                tokens: newProfile.tokens, 
+                highscore: newProfile.highscore, 
+                total_kills: newProfile.totalKills, 
+                matches: newProfile.matches, 
+                owned_classes: newProfile.ownedClasses, 
+                avatar: newProfile.avatar,
+                playtime: newProfile.playtime
+            }).eq('uid', auth.uid);
         } else {
             localStorage.setItem('pixshot_profile', JSON.stringify(newProfile));
         }
@@ -682,8 +721,10 @@ export default function PixShotMega() {
             if (!error && data) {
                 const newAuth = { isLoggedIn: true, username: data.username, uid: data.uid, password: authInput.pass };
                 setAuth(newAuth); localStorage.setItem('pixshot_auth', JSON.stringify(newAuth));
-                setGlobalProfile({ username: data.username, uid: data.uid, coins: 0, tokens: 0, highscore: 0, totalKills: 0, matches: 0, ownedClasses: ['basic'], avatar: '' });
+                setGlobalProfile({ username: data.username, uid: data.uid, coins: 0, tokens: 0, highscore: 0, totalKills: 0, matches: 0, ownedClasses: ['basic'], avatar: '', playtime: 0 });
                 setUiState(p => ({ ...p, showAuth: false }));
+                
+                socketRef.current?.emit('player:identify', { uid: data.uid, name: data.username });
                 addToast("Registered successfully", 'info');
             } else { addToast("Register failed: User might exist or network error", 'info'); }
         } else {
@@ -691,8 +732,21 @@ export default function PixShotMega() {
             if (!error && data) {
                 const newAuth = { isLoggedIn: true, username: data.username, uid: data.uid, password: authInput.pass };
                 setAuth(newAuth); localStorage.setItem('pixshot_auth', JSON.stringify(newAuth));
-                setGlobalProfile({ username: data.username, uid: data.uid, coins: data.coins, tokens: data.tokens, highscore: data.highscore, totalKills: data.total_kills, matches: data.matches, ownedClasses: data.owned_classes || ['basic'], avatar: data.avatar || '' });
+                setGlobalProfile({ 
+                    username: data.username, 
+                    uid: data.uid, 
+                    coins: data.coins, 
+                    tokens: data.tokens, 
+                    highscore: data.highscore, 
+                    totalKills: data.total_kills, 
+                    matches: data.matches, 
+                    ownedClasses: data.owned_classes || ['basic'], 
+                    avatar: data.avatar || '',
+                    playtime: data.playtime || 0
+                });
                 setUiState(p => ({ ...p, showAuth: false }));
+                
+                socketRef.current?.emit('player:identify', { uid: data.uid, name: data.username, avatar: data.avatar });
                 addToast("Logged in successfully", 'info');
             } else { addToast("Login failed: Incorrect username or password", 'info'); }
         }
@@ -2363,6 +2417,51 @@ export default function PixShotMega() {
             {/* MAIN MENU & GAME OVER */}
             {(!uiState.isPlaying || uiState.isGameOver) && !uiState.showAuth && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center z-50 overflow-hidden pointer-events-auto bg-slate-950/40">
+                    {/* TOP STATUS BAR */}
+                    {!uiState.isPlaying && (
+                        <div className="absolute top-0 inset-x-0 h-10 md:h-14 bg-slate-900/40 border-b border-slate-800/30 backdrop-blur-md z-50 flex items-center justify-between px-3 md:px-6 pointer-events-auto" style={{ transform: `scale(${settings.uiScale})`, transformOrigin: 'top center' }}>
+                            <div className="flex items-center gap-2 md:gap-6">
+                                <div className="flex items-center gap-2">
+                                    <span className="w-1.5 h-1.5 md:w-2.5 md:h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                    <span className="text-[10px] md:text-xs font-black text-slate-300 uppercase tracking-widest">{onlineCount} Players Online</span>
+                                </div>
+                                
+                                {globalTop.length > 0 && (
+                                    <div className="hidden lg:flex items-center gap-4 bg-slate-950/50 px-4 py-1.5 rounded-full border border-slate-800">
+                                        <span className="text-[10px] font-black text-amber-500 uppercase tracking-[0.2em]">Top Player:</span>
+                                        <div className="flex items-center gap-2">
+                                            {globalTop[0].avatar && <img src={globalTop[0].avatar} className="w-5 h-5 rounded-full border border-amber-500/50" />}
+                                            <span className="text-sm font-bold text-white">{globalTop[0].username}</span>
+                                            <span className="text-xs font-mono text-cyan-400">({globalTop[0].highscore})</span>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                            
+                            <div className="flex items-center gap-2 md:gap-4">
+                                <div onClick={() => setUiState(p => ({ ...p, showProfile: true }))} className="flex items-center gap-2 md:gap-3 bg-slate-800/50 hover:bg-slate-800 px-2 md:px-3 py-1 rounded-xl border border-slate-700 cursor-pointer transition-all">
+                                    <div className="w-6 h-6 md:w-8 md:h-8 rounded-full bg-slate-700 border border-slate-600 overflow-hidden">
+                                       {globalProfile.avatar ? <img src={globalProfile.avatar} className="w-full h-full object-cover" /> : <div className="flex items-center justify-center w-full h-full text-xs">👤</div>}
+                                    </div>
+                                    <div className="flex flex-col">
+                                        <span className="text-[10px] md:text-xs font-bold text-white leading-none truncate max-w-[60px] md:max-w-none">{auth.isLoggedIn ? auth.username : globalProfile.username}</span>
+                                        <span className="text-[8px] font-bold text-amber-400 leading-none mt-0.5 md:mt-1">{globalProfile.coins} 🪙</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* BOTTOM NAV BAR */}
+                    {!uiState.isPlaying && (
+                        <div className="absolute inset-x-0 bottom-0 py-4 z-40 flex flex-col items-center gap-2 pointer-events-none transition-all" style={{ opacity: uiState.showAuth || uiState.showProfile || uiState.showShop || uiState.showSettings || uiState.showFriends || uiState.showLeaderboard ? 0 : 1, transform: `scale(${settings.uiScale})`, transformOrigin: 'bottom center' }}>
+                            <div className="bg-slate-900/60 backdrop-blur px-4 py-2 rounded-2xl border border-slate-700/50 flex gap-4 pointer-events-auto">
+                                <button onClick={() => setUiState(p => ({ ...p, showLeaderboard: true }))} className="text-[10px] font-black uppercase tracking-widest text-amber-400 hover:text-amber-300">Leaderboard</button>
+                                <button onClick={() => setUiState(p => ({ ...p, showSettings: true }))} className="text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-300">Settings</button>
+                            </div>
+                        </div>
+                    )}
+
                     <div className="absolute inset-0 z-0 origin-center transition-transform duration-500 flex items-center justify-center" style={{ transform: `scale(${settings.uiScale})` }}>
                         <div className="w-[95%] max-w-[1200px] z-10 flex flex-col md:flex-row gap-6 md:gap-16 py-10 items-center justify-center min-h-screen">
                             {/* LEFT PANEL: HERO SHOWCASE */}
@@ -2519,19 +2618,33 @@ export default function PixShotMega() {
                     <div className="origin-center transition-transform duration-500 w-full flex items-center justify-center p-4" style={{ transform: `scale(${settings.uiScale})` }}>
                         <div className="bg-slate-900 p-8 rounded-3xl border border-amber-500/50 w-full max-w-lg shadow-[0_0_50px_rgba(245,158,11,0.15)] flex flex-col gap-6 max-h-[85vh] overflow-hidden">
                             <div className="flex justify-between items-center border-b border-slate-800 pb-4 shrink-0">
-                                <h2 className="text-xl md:text-2xl font-black text-amber-400 tracking-widest uppercase flex items-center gap-3">🏆 Top Players</h2>
+                                <h2 className="text-xl md:text-2xl font-black text-amber-400 tracking-widest uppercase flex items-center gap-3">🏆 Hall of Fame</h2>
                                 <button onClick={() => setUiState(p => ({ ...p, showLeaderboard: false }))} className="text-slate-500 hover:text-white text-2xl font-bold">✕</button>
                             </div>
                             <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-2">
-                                {leaderboard.map((lb, i) => (
+                                {globalTop.length > 0 ? globalTop.map((lb, i) => (
                                     <div key={i} className="flex justify-between items-center bg-slate-800/40 p-4 rounded-xl border border-slate-800 hover:bg-slate-800 transition-colors">
                                         <div className="flex items-center gap-4">
                                             <span className={`font-black text-lg ${i === 0 ? 'text-amber-400' : 'text-slate-500'}`}>#{i + 1}</span>
-                                            <span className="text-white font-bold">{lb.username}</span>
+                                            <div className="w-10 h-10 rounded-full bg-slate-700 overflow-hidden border border-slate-600">
+                                                {lb.avatar ? <img src={lb.avatar} className="w-full h-full object-cover" /> : <div className="flex items-center justify-center w-full h-full text-xs">👤</div>}
+                                            </div>
+                                            <div className="flex flex-col">
+                                                <span className="text-white font-bold">{lb.username}</span>
+                                                <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex gap-2">
+                                                    <span>💀 {lb.total_kills || 0}</span>
+                                                    <span>🕒 {Math.floor((lb.playtime || 0) / 60)}m</span>
+                                                </div>
+                                            </div>
                                         </div>
-                                        <span className="text-cyan-400 font-mono font-bold">{lb.highscore || lb.score || 0}</span>
+                                        <div className="flex flex-col items-end">
+                                            <span className="text-cyan-400 font-mono font-black text-xl">{lb.highscore || lb.score || 0}</span>
+                                            <span className="text-[8px] text-slate-500 font-black uppercase">High Score</span>
+                                        </div>
                                     </div>
-                                ))}
+                                )) : (
+                                    <div className="text-center text-slate-500 py-10 font-bold">Loading Hall of Fame...</div>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -2563,12 +2676,18 @@ export default function PixShotMega() {
                                         </div>
                                         <div className="grid grid-cols-2 gap-4 w-full mt-4">
                                             <div className="bg-slate-800 rounded-xl p-3 border border-slate-700">
-                                                <div className="text-xs text-slate-400 uppercase font-bold tracking-widest">Kills</div>
-                                                <div className="text-2xl font-black text-red-400 font-mono">{inspectUser.total_kills || 0}</div>
+                                                <div className="text-[10px] text-slate-400 uppercase font-bold tracking-widest leading-none mb-1">Kills</div>
+                                                <div className="text-xl font-black text-red-400 font-mono">{inspectUser.total_kills || inspectUser.totalKills || 0}</div>
                                             </div>
                                             <div className="bg-slate-800 rounded-xl p-3 border border-slate-700">
-                                                <div className="text-xs text-slate-400 uppercase font-bold tracking-widest">Highscore</div>
-                                                <div className="text-2xl font-black text-amber-400 font-mono">{inspectUser.highscore || 0}</div>
+                                                <div className="text-[10px] text-slate-400 uppercase font-bold tracking-widest leading-none mb-1">Highscore</div>
+                                                <div className="text-xl font-black text-amber-400 font-mono">{inspectUser.highscore || 0}</div>
+                                            </div>
+                                            <div className="bg-slate-800 rounded-xl p-3 border border-slate-700 col-span-2">
+                                                <div className="text-[10px] text-slate-400 uppercase font-bold tracking-widest leading-none mb-1">Total Playtime</div>
+                                                <div className="text-sm font-black text-cyan-400 font-mono">
+                                                    {Math.floor((inspectUser.playtime || 0) / 3600)}h {Math.floor(((inspectUser.playtime || 0) % 3600) / 60)}m
+                                                </div>
                                             </div>
                                         </div>
                                         <button onClick={() => {
@@ -2789,10 +2908,16 @@ export default function PixShotMega() {
                                     <div className="text-2xl text-emerald-400 font-mono font-black mt-1">{globalProfile.totalKills}</div>
                                 </div>
                                 <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 flex flex-col items-center justify-center text-center">
-                                    <div className="text-[10px] text-slate-400 uppercase tracking-widest">Matches Played</div>
-                                    <div className="text-2xl text-blue-400 font-mono font-black mt-1">{globalProfile.matches}</div>
+                                    <div className="text-[10px] text-slate-400 uppercase tracking-widest">K/M Ratio</div>
+                                    <div className="text-2xl text-purple-400 font-mono font-black mt-1">{(globalProfile.totalKills / Math.max(1, globalProfile.matches)).toFixed(1)}</div>
                                 </div>
-                                <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 flex flex-col items-center justify-center text-center relative overflow-hidden">
+                                <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 flex flex-col items-center justify-center text-center col-span-2">
+                                    <div className="text-[10px] text-slate-400 uppercase tracking-widest">Total Playtime</div>
+                                    <div className="text-xl text-amber-400 font-mono font-black mt-1">
+                                        {Math.floor(globalProfile.playtime / 3600)}h {Math.floor((globalProfile.playtime % 3600) / 60)}m {globalProfile.playtime % 60}s
+                                    </div>
+                                </div>
+                                <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 flex flex-col items-center justify-center text-center h-24">
                                     <div className="absolute inset-0 bg-amber-400/5"></div>
                                     <div className="text-[10px] text-amber-500/80 uppercase tracking-widest relative z-10 font-bold">Bank Balance</div>
                                     <div className="text-2xl text-amber-400 font-mono font-black mt-1 relative z-10">{globalProfile.coins} 🪙</div>
