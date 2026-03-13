@@ -53,10 +53,12 @@ if (SUPABASE_URL && SUPABASE_KEY) {
   console.log('[BR] Connected to Supabase DB');
   
   // PURGE STALE SERVERS ON STARTUP
-  supabase.from('game_servers').delete().neq('room_id', 'KEEP_ALIVE').then(({ error }) => {
-    if (error) console.error('[Supabase Startup Cleanup Error]', error.message);
-    else console.log('[Supabase DB] Stale servers purged on startup.');
-  });
+  if (supabase) {
+    supabase.from('game_servers').delete().neq('room_id', 'KEEP_ALIVE').then(({ error }) => {
+      if (error) console.error('[Supabase Startup Cleanup Error]', error.message);
+      else console.log('[Supabase DB] Stale servers purged on startup.');
+    });
+  }
 }
 
 const httpServer = createServer((req, res) => {
@@ -121,6 +123,10 @@ const playerToRoom = new Map(); // socketId -> roomId
 const ROOM_MAX = 30; // Max players per room
 const WORLD_SIZE = 8000; // Size of the game world
 
+// --- NEW SOCIAL & PRESENCE STATE ---
+const onlinePlayers = new Map(); // uid -> { name, status, socketId, lastSeen, startTime }
+const globalTopPlayers = []; // Cache for global leaderboard
+
 // Function to broadcast room list to all clients
 
 function getRoomId(socket, requestedRoomId, mode = 'battleroyale') {
@@ -179,6 +185,27 @@ function getRoomId(socket, requestedRoomId, mode = 'battleroyale') {
   return newRoomId;
 }
 
+// === REALTIME GLOBAL LEADERBOARD CACHE ===
+async function refreshGlobalLeaderboard() {
+  if (!supabase) return;
+  const { data, error } = await supabase
+    .from('players')
+    .select('username, highscore, total_kills, avatar, playtime')
+    .order('highscore', { ascending: false })
+    .order('total_kills', { ascending: false })
+    .limit(20);
+  
+  if (!error && data) {
+    globalTopPlayers.length = 0;
+    globalTopPlayers.push(...data);
+    io.emit('stats:global_top', globalTopPlayers);
+  }
+}
+
+// Refresh every 30 seconds
+setInterval(refreshGlobalLeaderboard, 30000);
+refreshGlobalLeaderboard(); // Initial fetch
+
 // === GLOBAL SERVER BROWSER REFRESHER ===
 function broadcastServerList() {
   const rooms = [];
@@ -215,6 +242,34 @@ function broadcastServerList() {
 io.on('connection', (socket) => {
   console.log(`[BR] Player connected: ${socket.id}`);
   broadcastServerList(); // Immediately sync room list to new connection
+  socket.emit('stats:global_top', globalTopPlayers);
+  io.emit('stats:online_count', onlinePlayers.size);
+
+  // === USER IDENTIFICATION & PRESENCE ===
+  socket.on('player:identify', ({ uid, name, avatar }) => {
+    if (!uid) return;
+    const sessionData = { 
+      uid, 
+      name, 
+      socketId: socket.id, 
+      status: 'Online', 
+      lastSeen: Date.now(), 
+      startTime: Date.now(),
+      avatar 
+    };
+    onlinePlayers.set(uid, sessionData);
+    
+    // Update DB
+    if (supabase) {
+      supabase.from('players').update({ 
+        is_online: true, 
+        last_seen: new Date().toISOString() 
+      }).eq('uid', uid).then();
+    }
+    
+    io.emit('player:status_update', { uid, status: 'Online', lastSeen: sessionData.lastSeen });
+    io.emit('stats:online_count', onlinePlayers.size);
+  });
 
   // === JOIN BATTLE ROYALE ===
   socket.on('br:join', (playerData) => {
@@ -450,6 +505,7 @@ io.on('connection', (socket) => {
       const alivePlayers = Array.from(room.players.values()).filter(pp => pp.alive);
       if (alivePlayers.length === 1) {
         io.to(roomId).emit('br:winner', { winner: alivePlayers[0] });
+        refreshGlobalLeaderboard(); // INSTANT REFRESH ON MATCH END
         // Cleanup room after 5 seconds
         setTimeout(() => {
           brRooms.delete(roomId);
@@ -499,6 +555,7 @@ io.on('connection', (socket) => {
     const alivePlayers = Array.from(room.players.values()).filter(pp => pp.alive);
     if (alivePlayers.length === 1 && room.started) {
       io.to(roomId).emit('br:winner', { winner: alivePlayers[0] });
+      refreshGlobalLeaderboard(); // INSTANT REFRESH ON MATCH END
       // Cleanup room after 5 seconds
       setTimeout(() => {
         brRooms.delete(roomId);
@@ -546,7 +603,34 @@ io.on('connection', (socket) => {
   });
 
   // === DISCONNECT ===
-  socket.on('disconnect', () => {
+  socket.on('disconnect', async () => {
+    // 1. Find UID associated with this socket
+    let disconnectedUid = null;
+    for (const [uid, data] of onlinePlayers.entries()) {
+      if (data.socketId === socket.id) {
+        disconnectedUid = uid;
+        const playDuration = Math.floor((Date.now() - data.startTime) / 1000);
+        
+        // Update Playtime in DB
+        if (supabase) {
+           // Atomic increment for playtime
+           const { data: currentPlaytime } = await supabase.from('players').select('playtime').eq('uid', uid).single();
+           const newTotal = (currentPlaytime?.playtime || 0) + playDuration;
+           
+           await supabase.from('players').update({ 
+             is_online: false, 
+             last_seen: new Date().toISOString(),
+             playtime: newTotal
+           }).eq('uid', uid);
+        }
+        
+        onlinePlayers.delete(uid);
+        io.emit('player:status_update', { uid, status: 'Offline', lastSeen: Date.now() });
+        io.emit('stats:online_count', onlinePlayers.size);
+        break;
+      }
+    }
+
     const roomId = playerToRoom.get(socket.id);
     if (roomId) {
       const room = brRooms.get(roomId);
