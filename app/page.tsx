@@ -161,7 +161,7 @@ export default function PixShotMega() {
     const [addFriendInput, setAddFriendInput] = useState('');
     const [killFeed, setKillFeed] = useState<{ id: number, killer: string, victim: string, time: number }[]>([]);
     const [leaderboard, setLeaderboard] = useState<any[]>([]);
-    const [globalTop, setGlobalTop] = useState<any[]>([]);
+    const [globalTop, setGlobalTop] = useState<any[] | null>(null);
     const [onlineCount, setOnlineCount] = useState(1);
     const [allPlayers, setAllPlayers] = useState<any[]>([]);
     const [friendRequests, setFriendRequests] = useState<any[]>([]);
@@ -287,7 +287,7 @@ export default function PixShotMega() {
             setAuth(parsedAuth);
             if (parsedAuth.isLoggedIn) {
                 setUiState(p => ({ ...p, showAuth: false }));
-                supabase.from('players').select('*').eq('uid', parsedAuth.uid).single().then(({ data }) => {
+                supabase.from('players').select('*').eq('uid', parsedAuth.uid).single().then(({ data }: any) => {
                     if (data) setGlobalProfile({ 
                         username: data.username, 
                         uid: data.uid, 
@@ -312,7 +312,7 @@ export default function PixShotMega() {
 
     useEffect(() => {
         if (uiState.showLeaderboard) {
-            supabase.from('players').select('uid, username, highscore, total_kills').order('highscore', { ascending: false }).limit(50).then(({ data }) => {
+            supabase.from('players').select('uid, username, highscore, total_kills').order('highscore', { ascending: false }).limit(50).then(({ data }: any) => {
                 if (data) setLeaderboard(data);
             });
         }
@@ -322,11 +322,11 @@ export default function PixShotMega() {
         if (!auth.uid) return;
         const { data } = await supabase.from('friends').select('*').eq('user_uid', auth.uid);
         if (data) {
-            setFriends(data.filter(f => f.status === 'accepted').map(f => ({ uid: f.friend_uid, name: f.friend_name, status: 'Offline' })));
+            setFriends(data.filter((f: any) => f.status === 'accepted').map((f: any) => ({ uid: f.friend_uid, name: f.friend_name, status: 'Offline' })));
         }
         const { data: reqData } = await supabase.from('friends').select('*').eq('friend_uid', auth.uid).eq('status', 'pending');
         if (reqData) {
-            setFriendRequests(reqData.map(f => ({ uid: f.user_uid, name: f.user_uid }))); // Fallback name
+            setFriendRequests(reqData.map((f: any) => ({ uid: f.user_uid, name: f.user_uid }))); // Fallback name
         }
         socketRef.current?.emit('player:status', { uid: auth.uid, status: 'Online' });
     };
@@ -344,7 +344,7 @@ export default function PixShotMega() {
         const fetchServers = async () => {
             const { data } = await supabase.from('game_servers').select('*');
             if (data) {
-                setServerList(data.map(srv => ({
+                setServerList(data.map((srv: any) => ({
                     id: srv.room_id,
                     players: srv.players,
                     max: srv.max_players,
@@ -358,7 +358,7 @@ export default function PixShotMega() {
         // Subscribe to changes
         const channel = supabase
             .channel('game_servers_realtime')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'game_servers' }, (payload) => {
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'game_servers' }, (payload: any) => {
                 if (payload.eventType === 'INSERT') {
                     const srv = payload.new;
                     setServerList(prev => [...prev, {
@@ -391,18 +391,44 @@ export default function PixShotMega() {
     useEffect(() => {
         if (uiState.showFriends) {
             loadFriends();
-            supabase.from('players').select('uid, username, avatar').then(({ data }) => {
+            supabase.from('players').select('uid, username, avatar').then(({ data }: any) => {
                 if (data) setAllPlayers(data);
             });
         }
     }, [uiState.showFriends, auth.uid]);
 
-    // Interval to keep online status active
+    // LOAD LEADERBOARD FALLBACK (If socket data is delayed)
     useEffect(() => {
+        if (uiState.showLeaderboard && globalTop === null) {
+            const timer = setTimeout(async () => {
+                if (globalTop === null) {
+                    const { data, error } = await supabase
+                        .from('players')
+                        .select('username, highscore, total_kills, avatar, playtime')
+                        .order('highscore', { ascending: false })
+                        .order('total_kills', { ascending: false })
+                        .limit(20);
+                    if (!error && data) setGlobalTop(data);
+                    else if (error) setGlobalTop([]); // Error fallback to empty list
+                }
+            }, 3000);
+            return () => clearTimeout(timer);
+        }
+    }, [uiState.showLeaderboard, globalTop]);
+
+    // Interval to keep online status active & Refresh all players list
+    useEffect(() => {
+        const loadAllPlayers = async () => {
+            const { data, error } = await supabase.from('players').select('uid, username, coins, total_kills, matches, avatar, playtime, is_online, last_seen').limit(100);
+            if (!error && data) setAllPlayers(data);
+        };
+        loadAllPlayers();
+
         const interval = setInterval(() => {
             if (auth.isLoggedIn && socketRef.current?.connected) {
                 socketRef.current.emit('player:status', { uid: auth.uid, status: 'Online' });
             }
+            loadAllPlayers();
         }, 15000);
         return () => clearInterval(interval);
     }, [auth.isLoggedIn, auth.uid]);
@@ -885,13 +911,14 @@ export default function PixShotMega() {
             const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
             if (AudioContextClass) { audioCtxRef.current = new AudioContextClass(); }
         }
-        // Enhanced Mobile Detection
+        // Enhanced Mobile Detection & Default Scaling
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || (window.innerWidth <= 1024);
+        const isAndroid = /Android/i.test(navigator.userAgent);
         setSettings(prev => ({ 
             ...prev, 
             isMobile: isMobile, 
-            joystickScale: isMobile ? 1.2 : 1.0,
-            uiScale: isMobile ? 0.7 : 1.0
+            joystickScale: isMobile ? 1.4 : 1.0,
+            uiScale: isAndroid ? 1.0 : (isMobile ? 0.9 : 1.0) 
         }));
 
         const loadSound = async (id: string, src: string) => {
@@ -1220,25 +1247,6 @@ export default function PixShotMega() {
             if (!canvas) return;
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
-
-            // Auto-scale UI based on screen width - aggressive for mobile
-            const isMob = window.innerWidth < 1024;
-            const isMobileLandscape = isMob && window.innerWidth > window.innerHeight;
-            
-            // On mobile landscape, scale even more to prevent vertical clipping
-            let newScale = 1.0;
-            if (isMob) {
-                if (isMobileLandscape) {
-                    newScale = Math.max(0.4, Math.min(0.65, window.innerHeight / 700));
-                } else {
-                    newScale = Math.max(0.5, Math.min(0.75, window.innerWidth / 1100));
-                }
-            }
-
-            setSettings(prev => {
-                if (prev.uiScale === newScale) return prev;
-                return { ...prev, uiScale: newScale };
-            });
         };
         handleResize(); window.addEventListener('resize', handleResize);
         if (window.visualViewport) {
@@ -2260,9 +2268,9 @@ export default function PixShotMega() {
             <canvas ref={canvasRef} className="fixed inset-0 w-full h-full" style={{ cursor: 'crosshair' }} />
 
             {/* TOAST SYSTEM */}
-            <div className="absolute top-20 right-4 flex flex-col gap-2 z-[9999] pointer-events-none">
-                {toasts.map(toast => (
-                    <div key={toast.id} className="bg-slate-900 border border-slate-700 text-white p-4 rounded-xl shadow-2xl flex flex-col gap-3 min-w-[280px] pointer-events-auto animate-[slideInRight_0.3s_ease-out]">
+            <div className="absolute top-20 right-4 left-4 md:left-auto md:w-auto flex flex-col items-center md:items-end gap-2 z-[9999] pointer-events-none">
+                {toasts.map((toast: any) => (
+                    <div key={toast.id} className="bg-slate-900/95 border border-slate-700 text-white p-4 rounded-xl shadow-2xl flex flex-col gap-3 w-full max-w-[320px] pointer-events-auto animate-[slideInRight_0.3s_ease-out] backdrop-blur-md">
                         <div className="flex justify-between items-start gap-4">
                             <div className="flex items-start gap-3">
                                 <div className={`mt-0.5 text-lg ${toast.type === 'invite' ? 'text-amber-400' : 'text-cyan-400'}`}>
@@ -2292,7 +2300,7 @@ export default function PixShotMega() {
                             <div className="text-[10px] md:text-xs font-bold text-white mb-3 animate-pulse bg-slate-800/50 rounded-lg p-1.5">{uiState.brCountdownMsg || 'Waiting for players...'}</div>
 
                             <div className="bg-slate-950/50 p-2 border border-slate-700/50 rounded-xl mb-3 text-left overflow-y-auto custom-scrollbar flex-1 max-h-32">
-                                {uiState.lobbyPlayers.map((p, idx) => (
+                                {uiState.lobbyPlayers.map((p: any, idx: number) => (
                                     <div key={idx} className="flex justify-between items-center py-1 border-b border-slate-800 last:border-0 pointer-events-none">
                                         <div className={`font-bold text-[10px] md:text-xs ${(p.uid === globalProfile.uid || p.uid === auth.uid) ? 'text-amber-400' : 'text-slate-200'} truncate mr-2`}>{p.name} {(p.uid === globalProfile.uid || p.uid === auth.uid) ? '(You)' : ''}</div>
                                         <div className={`px-1.5 py-0.5 rounded-md text-[8px] font-black uppercase tracking-wider whitespace-nowrap ${p.isReady ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400 border border-slate-700'}`}>
@@ -2333,7 +2341,7 @@ export default function PixShotMega() {
                         )}
 
                         {/* Kill Feed List */}
-                        {killFeed.filter(kf => Date.now() - kf.time < 5000).map((kf, i) => (
+                        {killFeed.filter((kf: any) => Date.now() - kf.time < 5000).map((kf: any, i: number) => (
                             <div key={kf.id} className="bg-slate-900/60 border-l-4 border-l-emerald-500 backdrop-blur px-3 py-2 rounded text-xs font-bold text-slate-300 animate-[slideInRight_0.3s_ease-out] w-full mt-1 shadow-lg">
                                 <span className="text-emerald-400">{kf.killer}</span> <span className="opacity-70">⚔️</span> <span className="text-red-400">{kf.victim}</span>
                             </div>
@@ -2381,8 +2389,8 @@ export default function PixShotMega() {
                             }}></div>
                     </div>
 
-                    <div className="absolute bottom-52 right-12 flex flex-col gap-4" style={{ transform: `scale(${settings.uiScale})`, transformOrigin: 'bottom right' }}>
-                        <button className="w-20 h-20 rounded-full bg-cyan-600/40 border-2 border-cyan-400 backdrop-blur-md text-white font-black active:bg-cyan-500 shadow-[0_0_20px_rgba(6,182,212,0.3)] pointer-events-auto flex items-center justify-center text-xs uppercase tracking-widest transition-transform active:scale-90"
+                    <div className="absolute bottom-48 md:bottom-52 right-8 md:right-12 flex flex-col gap-4" style={{ transform: `scale(${settings.uiScale * (settings.isMobile ? 1.2 : 1.0)})`, transformOrigin: 'bottom right' }}>
+                        <button className="w-20 h-20 md:w-24 md:h-24 rounded-full bg-cyan-600/50 border-2 border-cyan-400 backdrop-blur-xl text-white font-black active:bg-cyan-500 shadow-[0_0_30px_rgba(6,182,212,0.4)] pointer-events-auto flex items-center justify-center text-xs md:text-sm uppercase tracking-[0.2em] transition-transform active:scale-95"
                             onMouseDown={() => gameRef.current.keys.space = true} onMouseUp={() => gameRef.current.keys.space = false}
                             onTouchStart={(e) => { e.preventDefault(); gameRef.current.keys.space = true; }} onTouchEnd={(e) => { e.preventDefault(); gameRef.current.keys.space = false; }}>DASH</button>
                     </div>
@@ -2406,7 +2414,7 @@ export default function PixShotMega() {
             {/* AUTH MENU (Simulated) */}
             {uiState.showAuth && !auth.isLoggedIn && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center z-[100] bg-slate-950/80 backdrop-blur-xl">
-                    <div className="bg-slate-900 border border-cyan-500/50 p-8 rounded-3xl shadow-[0_0_50px_rgba(6,182,212,0.15)] flex flex-col items-center w-[90%] max-w-md">
+                    <div className="bg-slate-900/90 border border-cyan-500/50 p-8 rounded-[2rem] shadow-[0_0_50px_rgba(6,182,212,0.2)] flex flex-col items-center w-[90%] max-w-md transition-transform duration-500" style={{ transform: `scale(${settings.uiScale})` }}>
                         <h1 className="text-4xl font-black mb-6 text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-600">PIXSHOT</h1>
                         <input type="text" placeholder="Username" className="w-full bg-slate-800 border border-slate-600 text-white px-4 py-3 rounded-xl mb-4 outline-none focus:border-cyan-400 font-bold" value={authInput.user} onChange={e => setAuthInput(p => ({ ...p, user: e.target.value }))} />
                         <input type="password" placeholder="Password" className="w-full bg-slate-800 border border-slate-600 text-white px-4 py-3 rounded-xl mb-6 outline-none focus:border-cyan-400 font-bold" value={authInput.pass} onChange={e => setAuthInput(p => ({ ...p, pass: e.target.value }))} />
@@ -2419,63 +2427,17 @@ export default function PixShotMega() {
                 </div>
             )}
 
-            {/* MAIN MENU & GAME OVER */}
             {(!uiState.isPlaying || uiState.isGameOver) && !uiState.showAuth && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center z-50 overflow-hidden pointer-events-auto bg-slate-950/40">
-                    {/* TOP STATUS BAR */}
-                    {!uiState.isPlaying && (
-                        <div className="absolute top-0 inset-x-0 h-10 md:h-14 bg-slate-900/40 border-b border-slate-800/30 backdrop-blur-md z-50 flex items-center justify-between px-3 md:px-6 pointer-events-auto" style={{ transform: `scale(${settings.uiScale})`, transformOrigin: 'top center' }}>
-                            <div className="flex items-center gap-2 md:gap-6">
-                                <div className="flex items-center gap-2">
-                                    <span className="w-1.5 h-1.5 md:w-2.5 md:h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                                    <span className="text-[10px] md:text-xs font-black text-slate-300 uppercase tracking-widest">{onlineCount} Players Online</span>
-                                </div>
-                                
-                                {globalTop.length > 0 && (
-                                    <div className="hidden lg:flex items-center gap-4 bg-slate-950/50 px-4 py-1.5 rounded-full border border-slate-800">
-                                        <span className="text-[10px] font-black text-amber-500 uppercase tracking-[0.2em]">Top Player:</span>
-                                        <div className="flex items-center gap-2">
-                                            {globalTop[0].avatar && <img src={globalTop[0].avatar} className="w-5 h-5 rounded-full border border-amber-500/50" />}
-                                            <span className="text-sm font-bold text-white">{globalTop[0].username}</span>
-                                            <span className="text-xs font-mono text-cyan-400">({globalTop[0].highscore})</span>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                            
-                            <div className="flex items-center gap-2 md:gap-4">
-                                <div onClick={() => setUiState(p => ({ ...p, showProfile: true }))} className="flex items-center gap-2 md:gap-3 bg-slate-800/50 hover:bg-slate-800 px-2 md:px-3 py-1 rounded-xl border border-slate-700 cursor-pointer transition-all">
-                                    <div className="w-6 h-6 md:w-8 md:h-8 rounded-full bg-slate-700 border border-slate-600 overflow-hidden">
-                                       {globalProfile.avatar ? <img src={globalProfile.avatar} className="w-full h-full object-cover" /> : <div className="flex items-center justify-center w-full h-full text-xs">👤</div>}
-                                    </div>
-                                    <div className="flex flex-col">
-                                        <span className="text-[10px] md:text-xs font-bold text-white leading-none truncate max-w-[60px] md:max-w-none">{auth.isLoggedIn ? auth.username : globalProfile.username}</span>
-                                        <span className="text-[8px] font-bold text-amber-400 leading-none mt-0.5 md:mt-1">{globalProfile.coins} 🪙</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* BOTTOM NAV BAR */}
-                    {!uiState.isPlaying && (
-                        <div className="absolute inset-x-0 bottom-0 py-4 z-40 flex flex-col items-center gap-2 pointer-events-none transition-all" style={{ opacity: uiState.showAuth || uiState.showProfile || uiState.showShop || uiState.showSettings || uiState.showFriends || uiState.showLeaderboard ? 0 : 1, transform: `scale(${settings.uiScale})`, transformOrigin: 'bottom center' }}>
-                            <div className="bg-slate-900/60 backdrop-blur px-4 py-2 rounded-2xl border border-slate-700/50 flex gap-4 pointer-events-auto">
-                                <button onClick={() => setUiState(p => ({ ...p, showLeaderboard: true }))} className="text-[10px] font-black uppercase tracking-widest text-amber-400 hover:text-amber-300">Leaderboard</button>
-                                <button onClick={() => setUiState(p => ({ ...p, showSettings: true }))} className="text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-300">Settings</button>
-                            </div>
-                        </div>
-                    )}
-
-                    <div className="absolute inset-0 z-0 origin-center transition-transform duration-500 flex items-center justify-center" style={{ transform: `scale(${settings.uiScale})` }}>
-                        <div className="w-[95%] max-w-[1200px] z-10 flex flex-col md:flex-row gap-6 md:gap-16 py-10 items-center justify-center min-h-screen">
+                <div className="absolute inset-0 flex flex-col items-center justify-center z-[50] overflow-y-auto custom-scrollbar pointer-events-auto bg-slate-950/60 py-10 select-none">
+                    <div className="origin-center transition-transform duration-700 flex items-center justify-center w-full min-h-full p-4" style={{ transform: 'scale(' + settings.uiScale + ')' }}>
+                        <div className="w-full max-w-[1400px] z-[10] flex flex-col lg:flex-row gap-8 lg:gap-20 py-10 items-center justify-center min-h-[90vh]">
                             {/* LEFT PANEL: HERO SHOWCASE */}
                             <div className="flex-1 flex flex-col items-center justify-center pt-8 md:pt-0 pointer-events-none">
                                 <h1 className="text-5xl md:text-8xl font-black text-transparent bg-clip-text bg-gradient-to-b from-cyan-400 to-blue-600 tracking-tighter drop-shadow-[0_0_30px_rgba(6,182,212,0.4)] mb-2 md:mb-4 text-center z-10 uppercase w-full">PixShot.io</h1>
                                 
-                                <div className="z-10 mb-4 md:mb-10 flex items-center gap-2 bg-slate-900/60 px-3 py-1 rounded-full border border-slate-700/50 backdrop-blur-sm pointer-events-auto">
-                                    <div className={`w-1.5 h-1.5 rounded-full animate-pulse ${connStatus === 'Connected' ? 'bg-emerald-400 shadow-[0_0_10px_#10b981]' : connStatus === 'Connecting' ? 'bg-amber-400 shadow-[0_0_10px_#f59e0b]' : 'bg-red-500 shadow-[0_0_10px_#ef4444]'}`}></div>
-                                    <span className={`text-[8px] md:text-[10px] font-black uppercase tracking-[0.2em] ${connStatus === 'Connected' ? 'text-emerald-400' : connStatus === 'Connecting' ? 'text-amber-400' : 'text-red-400'}`}>Server: {connStatus}</span>
+                                <div className="z-10 mb-4 md:mb-10 flex items-center gap-2 bg-slate-900/70 px-4 py-2 rounded-full border border-slate-700/50 backdrop-blur-md pointer-events-auto shadow-lg">
+                                    <div className={`w-2 h-2 rounded-full animate-pulse ${connStatus === 'Connected' ? 'bg-emerald-400 shadow-[0_0_12px_#10b981]' : connStatus === 'Connecting' ? 'bg-amber-400 shadow-[0_0_12px_#f59e0b]' : 'bg-red-500 shadow-[0_0_12px_#ef4444]'}`}></div>
+                                    <span className={`text-[10px] md:text-[12px] font-black uppercase tracking-[0.2em] ${connStatus === 'Connected' ? 'text-emerald-400' : connStatus === 'Connecting' ? 'text-amber-400' : 'text-red-400'}`}>Server: {connStatus}</span>
                                 </div>
 
                                 {!uiState.isGameOver && (
@@ -2487,13 +2449,13 @@ export default function PixShotMega() {
                                 )}
 
                                 {!uiState.isGameOver && (
-                                    <div className="flex items-center gap-2 md:gap-4 mt-4 md:mt-10 z-10 flex-wrap justify-center bg-slate-900/50 backdrop-blur-md p-2 md:p-4 rounded-2xl md:rounded-3xl border border-slate-800 shadow-xl w-full max-w-sm md:max-w-md pointer-events-auto">
-                                        <button onClick={() => setUiState(p => ({ ...p, showShop: true }))} className="flex-1 min-w-[80px] md:min-w-[100px] bg-amber-600/10 border border-amber-500/30 px-2 md:px-6 py-2 md:py-3 rounded-xl md:rounded-2xl font-black text-[10px] md:text-base hover:bg-amber-600/30 hover:border-amber-400 text-amber-400 tracking-widest uppercase transition-all flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2"><span className="text-base md:text-xl">🛒</span> Arsenal</button>
-                                        <div className="flex flex-col items-center justify-center px-2 md:px-4 border-slate-700 border-x">
-                                            <span className="text-[8px] md:text-xs text-slate-400 uppercase tracking-widest font-bold">Credits</span>
-                                            <span className="text-lg md:text-2xl font-black font-mono text-amber-400">{globalProfile.coins} <span className="text-xs md:text-sm">🪙</span></span>
+                                    <div className="flex items-center gap-3 md:gap-4 mt-6 md:mt-10 z-10 flex-wrap justify-center bg-slate-900/60 backdrop-blur-xl p-3 md:p-4 rounded-2xl md:rounded-3xl border border-slate-700/50 shadow-[0_10px_30px_rgba(0,0,0,0.5)] w-full max-w-[320px] md:max-w-md pointer-events-auto">
+                                        <button onClick={() => setUiState(p => ({ ...p, showShop: true }))} className="flex-1 min-w-[100px] bg-amber-600/20 border border-amber-500/40 px-3 md:px-6 py-3 md:py-4 rounded-xl md:rounded-2xl font-black text-[12px] md:text-base hover:bg-amber-600/40 hover:border-amber-400 text-amber-400 tracking-widest uppercase transition-all flex flex-col items-center justify-center gap-1 md:gap-2 active:scale-95"><span className="text-xl">🛒</span> ARSENAL</button>
+                                        <div className="flex flex-col items-center justify-center px-4 border-slate-700 border-x">
+                                            <span className="text-[10px] text-slate-400 uppercase tracking-widest font-bold">Credits</span>
+                                            <span className="text-xl md:text-2xl font-black font-mono text-amber-400">{globalProfile.coins} <span className="text-xs md:text-sm">🪙</span></span>
                                         </div>
-                                        <button onClick={() => setUiState(p => ({ ...p, showProfile: true }))} className="flex-1 min-w-[80px] md:min-w-[100px] bg-cyan-600/10 border border-cyan-500/30 px-2 md:px-6 py-2 md:py-3 rounded-xl md:rounded-2xl font-black text-[10px] md:text-base hover:bg-cyan-600/30 hover:border-cyan-400 text-cyan-400 tracking-widest uppercase transition-all flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2"><span className="text-base md:text-xl">👤</span> Profile</button>
+                                        <button onClick={() => setUiState(p => ({ ...p, showProfile: true }))} className="flex-1 min-w-[100px] bg-cyan-600/20 border border-cyan-500/40 px-3 md:px-6 py-3 md:py-4 rounded-xl md:rounded-2xl font-black text-[12px] md:text-base hover:bg-cyan-600/40 hover:border-cyan-400 text-cyan-400 tracking-widest uppercase transition-all flex flex-col items-center justify-center gap-1 md:gap-2 active:scale-95"><span className="text-xl">👤</span> PROFILE</button>
                                     </div>
                                 )}
 
@@ -2518,52 +2480,60 @@ export default function PixShotMega() {
                             {/* RIGHT PANEL: MODES & ACTION */}
                             <div className="flex-1 flex flex-col justify-end max-w-md mx-auto w-full z-10 pb-4 md:pb-0 pointer-events-auto">
                                 {!uiState.isGameOver && (
-                                    <div className="bg-slate-900/80 backdrop-blur-xl border border-slate-700 rounded-3xl p-4 md:p-8 shadow-2xl flex flex-col gap-3 md:gap-4">
-                                        <div className="flex justify-between items-center mb-1 md:mb-2">
-                                            <div className="text-[10px] md:text-xs text-slate-400 font-bold uppercase tracking-[0.2em]">Select Operation</div>
-                                            <div className="flex gap-2">
-                                                <button onClick={() => setUiState(p => ({ ...p, showFriends: true }))} className="text-xs md:text-lg bg-slate-800 hover:bg-slate-700 text-white rounded-full w-8 h-8 flex items-center justify-center border border-slate-600 relative">👥{(friendRequests.length > 0) && <span className="absolute -top-1 -right-1 bg-red-500 text-[8px] w-3 h-3 rounded-full flex items-center justify-center">{friendRequests.length}</span>}</button>
-                                                <button onClick={() => setUiState(p => ({ ...p, showSettings: true }))} className="text-xs md:text-lg bg-slate-800 hover:bg-slate-700 text-white rounded-full w-8 h-8 flex items-center justify-center border border-slate-600">⚙️</button>
+                                    <div className="bg-slate-900/90 backdrop-blur-3xl border border-slate-700/80 rounded-[2.5rem] p-5 md:p-8 shadow-[0_20px_60px_rgba(0,0,0,0.6)] flex flex-col gap-4 md:gap-6">
+                                        <div className="flex justify-between items-center px-1">
+                                            <div className="text-[11px] md:text-xs text-slate-400 font-extrabold uppercase tracking-[0.25em]">Deployment Center</div>
+                                            <div className="flex gap-3">
+                                                <button onClick={() => setUiState(p => ({ ...p, showLeaderboard: true }))} className="text-lg md:text-xl bg-slate-800 hover:bg-slate-700 text-amber-400 rounded-2xl w-10 h-10 md:w-12 md:h-12 flex items-center justify-center border border-slate-600 shadow-lg active:scale-95 transition-all" title="Top Players">🏆</button>
+                                                <button onClick={() => setUiState(p => ({ ...p, showFriends: true }))} className="text-lg md:text-xl bg-slate-800 hover:bg-slate-700 text-white rounded-2xl w-10 h-10 md:w-12 md:h-12 flex items-center justify-center border border-slate-600 relative shadow-lg active:scale-95 transition-all">👥{(friendRequests.length > 0) && <span className="absolute -top-1 -right-1 bg-red-500 text-[10px] w-5 h-5 rounded-full flex items-center justify-center border-2 border-slate-900 font-black">{friendRequests.length}</span>}</button>
+                                                <button onClick={() => setUiState(p => ({ ...p, showSettings: true }))} className="text-lg md:text-xl bg-slate-800 hover:bg-slate-700 text-white rounded-2xl w-10 h-10 md:w-12 md:h-12 flex items-center justify-center border border-slate-600 shadow-lg active:scale-95 transition-all">⚙️</button>
                                             </div>
                                         </div>
 
-                                        <div className="grid grid-cols-2 gap-3 md:gap-4">
+                                        <div className="grid grid-cols-2 md:grid-cols-2 gap-2 md:gap-4">
                                             <button onClick={() => setUiState(p => ({ ...p, gameMode: 'normal' }))} className={`group relative overflow-hidden rounded-2xl border ${uiState.gameMode === 'normal' ? 'border-cyan-400 bg-cyan-900/40' : 'border-slate-700 bg-slate-800/80 hover:bg-slate-700'}`}>
-                                                <div className="p-2 md:p-4 flex flex-col items-center justify-center gap-1 md:gap-2 relative z-10 h-full">
+                                                <div className="p-3 md:p-4 flex flex-col items-center justify-center gap-1 md:gap-2 relative z-10 h-full">
                                                     <span className={`text-xl md:text-2xl ${uiState.gameMode === 'normal' ? 'text-cyan-400' : 'text-slate-400'}`}>🌍</span>
-                                                    <span className={`font-black uppercase tracking-wider text-[9px] md:text-sm ${uiState.gameMode === 'normal' ? 'text-white' : 'text-slate-300'}`}>Survival</span>
+                                                    <span className={`font-black uppercase tracking-wider text-[10px] md:text-sm ${uiState.gameMode === 'normal' ? 'text-white' : 'text-slate-300'}`}>Survival</span>
                                                 </div>
                                             </button>
                                             <button onClick={() => setUiState(p => ({ ...p, gameMode: 'battleroyale', showServerBrowser: true, targetRoomId: null }))} className={`group relative overflow-hidden rounded-2xl border ${uiState.gameMode === 'battleroyale' ? 'border-red-400 bg-red-900/40' : 'border-slate-700 bg-slate-800/80 hover:bg-slate-700'}`}>
-                                                <div className="p-2 md:p-4 flex flex-col items-center justify-center gap-1 md:gap-2 relative z-10 h-full">
+                                                <div className="p-3 md:p-4 flex flex-col items-center justify-center gap-1 md:gap-2 relative z-10 h-full">
                                                     <span className={`text-xl md:text-2xl ${uiState.gameMode === 'battleroyale' ? 'text-red-400' : 'text-slate-400'}`}>🪂</span>
-                                                    <span className={`font-black uppercase tracking-wider text-[9px] md:text-sm ${uiState.gameMode === 'battleroyale' ? 'text-white' : 'text-slate-300'}`}>B. Royale</span>
+                                                    <span className={`font-black uppercase tracking-wider text-[10px] md:text-sm ${uiState.gameMode === 'battleroyale' ? 'text-white' : 'text-slate-300'}`}>B. Royale</span>
                                                 </div>
                                             </button>
                                             <button onClick={() => setUiState(p => ({ ...p, gameMode: 'pvp1v1', showServerBrowser: true, targetRoomId: null }))} className={`group relative overflow-hidden rounded-2xl border ${uiState.gameMode === 'pvp1v1' ? 'border-purple-400 bg-purple-900/40' : 'border-slate-700 bg-slate-800/80 hover:bg-slate-700'}`}>
-                                                <div className="p-2 md:p-4 flex flex-col items-center justify-center gap-1 md:gap-2 relative z-10 h-full">
+                                                <div className="p-3 md:p-4 flex flex-col items-center justify-center gap-1 md:gap-2 relative z-10 h-full">
                                                     <span className={`text-xl md:text-2xl ${uiState.gameMode === 'pvp1v1' ? 'text-purple-400' : 'text-slate-400'}`}>⚔️</span>
-                                                    <span className={`font-black uppercase tracking-wider text-[9px] md:text-sm ${uiState.gameMode === 'pvp1v1' ? 'text-white' : 'text-slate-300'}`}>1v1 Arena</span>
+                                                    <span className={`font-black uppercase tracking-wider text-[10px] md:text-sm ${uiState.gameMode === 'pvp1v1' ? 'text-white' : 'text-slate-300'}`}>1v1 Arena</span>
                                                 </div>
                                             </button>
-                                            <button onClick={() => setUiState(p => ({ ...p, gameMode: 'god' }))} className={`group relative overflow-hidden rounded-2xl border ${uiState.gameMode === 'god' ? 'border-amber-400 bg-amber-900/40' : 'border-slate-700 bg-slate-800/80 hover:bg-slate-700'}`}>
-                                                <div className="p-2 md:p-4 flex flex-col items-center justify-center gap-1 md:gap-2 relative z-10 h-full">
+                                            <button onClick={() => setUiState(p => ({ ...p, gameMode: 'peaceful' }))} className={`group relative overflow-hidden rounded-2xl border ${uiState.gameMode === 'peaceful' ? 'border-emerald-400 bg-emerald-900/40' : 'border-slate-700 bg-slate-800/80 hover:bg-slate-700'}`}>
+                                                <div className="p-3 md:p-4 flex flex-col items-center justify-center gap-1 md:gap-2 relative z-10 h-full">
+                                                    <span className={`text-xl md:text-2xl ${uiState.gameMode === 'peaceful' ? 'text-emerald-400' : 'text-slate-400'}`}>🕊️</span>
+                                                    <span className={`font-black uppercase tracking-wider text-[10px] md:text-sm ${uiState.gameMode === 'peaceful' ? 'text-white' : 'text-slate-300'}`}>Peaceful</span>
+                                                </div>
+                                            </button>
+                                            <button onClick={() => setUiState(p => ({ ...p, gameMode: 'god' }))} className={`group relative overflow-hidden rounded-2xl border ${uiState.gameMode === 'god' ? 'border-amber-400 bg-amber-900/40' : 'border-slate-700 bg-slate-800/80 hover:bg-slate-700'} col-span-2`}>
+                                                <div className="p-2 md:p-3 flex flex-col items-center justify-center gap-1 md:gap-2 relative z-10 h-full">
                                                     <span className={`text-xl md:text-2xl ${uiState.gameMode === 'god' ? 'text-amber-400' : 'text-slate-400'}`}>⚚</span>
-                                                    <span className={`font-black uppercase tracking-wider text-[9px] md:text-sm ${uiState.gameMode === 'god' ? 'text-white' : 'text-slate-300'}`}>God Mode</span>
+                                                    <span className={`font-black uppercase tracking-wider text-[10px] md:text-sm ${uiState.gameMode === 'god' ? 'text-white' : 'text-slate-300'}`}>God Mode (Creative)</span>
                                                 </div>
                                             </button>
                                         </div>
 
                                         <div className="flex items-center gap-2 mt-2 w-full">
-                                            <button onClick={() => { setUiState(p => ({ ...p, showFriends: true })); setFriendTab('all'); }} className="flex-1 py-3 bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/50 text-indigo-400 rounded-xl font-bold uppercase tracking-widest text-[10px] md:text-sm transition-all shadow-md flex items-center justify-center gap-2">
-                                                <span className="text-sm">➕</span> Party
+                                            <button onClick={() => { setUiState(p => ({ ...p, showFriends: true })); setFriendTab('all'); }} className="flex-1 py-4 bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/50 text-indigo-400 rounded-xl font-black uppercase tracking-widest text-xs transition-all shadow-md flex items-center justify-center gap-2">
+                                                <span className="text-sm">➕</span> Find Party
                                             </button>
                                         </div>
 
                                         <button onClick={() => {
                                             if (party.length > 0 && party.some(p => p.isReady === false)) { alert("All party members must be Ready!"); return; }
                                             if (uiState.gameMode === 'battleroyale' || uiState.gameMode === 'pvp1v1') { setUiState(p => ({ ...p, showServerBrowser: true })); socketRef.current?.emit('br:get_rooms'); } else { startGame(uiState.gameMode); }
-                                        }} className="w-full mt-2 py-5 md:py-6 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 border border-cyan-400/50 rounded-2xl font-black text-lg md:text-2xl uppercase tracking-[0.2em] shadow-[0_0_30px_rgba(6,182,212,0.4)] transition-all text-white relative overflow-hidden group">
+                                        }} className="w-full mt-2 py-6 md:py-8 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 border border-cyan-400/50 rounded-2xl font-black text-xl md:text-3xl uppercase tracking-[0.2em] shadow-[0_0_40px_rgba(6,182,212,0.4)] transition-all text-white relative overflow-hidden group">
+                                            <div className="absolute inset-0 bg-white/10 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000"></div>
                                             <span className="relative z-10">{uiState.gameMode === 'battleroyale' || uiState.gameMode === 'pvp1v1' ? 'FIND MATCH' : 'DEPLOY TANK'}</span>
                                         </button>
                                     </div>
@@ -2595,10 +2565,10 @@ export default function PixShotMega() {
                             </div>
 
                             <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-2 p-1">
-                                {serverList.filter(s => s.mode === uiState.gameMode).length === 0 && (
+                                {serverList.filter((s: any) => s.mode === uiState.gameMode).length === 0 && (
                                     <div className="text-center text-slate-500 font-bold py-10 opacity-50">No active {uiState.gameMode} servers.</div>
                                 )}
-                                {serverList.filter(s => s.mode === uiState.gameMode).map(srv => (
+                                {serverList.filter((s: any) => s.mode === uiState.gameMode).map((srv: any) => (
                                     <div key={srv.id} className="grid grid-cols-12 items-center bg-slate-800/40 p-4 rounded-xl border border-slate-800/50 hover:bg-slate-800 hover:border-cyan-500/30 transition-all">
                                         <div className="col-span-6 font-mono text-white text-xs truncate pr-4">{srv.id}</div>
                                         <div className="col-span-3 text-center text-cyan-400 font-mono font-bold">{srv.players}/{srv.max}</div>
@@ -2627,28 +2597,42 @@ export default function PixShotMega() {
                                 <button onClick={() => setUiState(p => ({ ...p, showLeaderboard: false }))} className="text-slate-500 hover:text-white text-2xl font-bold">✕</button>
                             </div>
                             <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-2">
-                                {globalTop.length > 0 ? globalTop.map((lb, i) => (
-                                    <div key={i} className="flex justify-between items-center bg-slate-800/40 p-4 rounded-xl border border-slate-800 hover:bg-slate-800 transition-colors">
-                                        <div className="flex items-center gap-4">
-                                            <span className={`font-black text-lg ${i === 0 ? 'text-amber-400' : 'text-slate-500'}`}>#{i + 1}</span>
-                                            <div className="w-10 h-10 rounded-full bg-slate-700 overflow-hidden border border-slate-600">
-                                                {lb.avatar ? <img src={lb.avatar} className="w-full h-full object-cover" /> : <div className="flex items-center justify-center w-full h-full text-xs">👤</div>}
-                                            </div>
-                                            <div className="flex flex-col">
-                                                <span className="text-white font-bold">{lb.username}</span>
-                                                <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex gap-2">
-                                                    <span>💀 {lb.total_kills || 0}</span>
-                                                    <span>🕒 {Math.floor((lb.playtime || 0) / 60)}m</span>
+                                {globalTop === null ? (
+                                    <div className="text-center text-slate-500 py-16 flex flex-col items-center gap-4">
+                                        <div className="w-12 h-12 border-4 border-amber-500/20 border-t-amber-500 rounded-full animate-spin"></div>
+                                        <span className="font-black uppercase tracking-widest text-sm animate-pulse">Consulting Hall of Fame...</span>
+                                    </div>
+                                ) : globalTop.length > 0 ? (
+                                    <div className="flex flex-col gap-3">
+                                        {globalTop.map((lb: any, i: number) => (
+                                            <div key={i} className="flex justify-between items-center bg-slate-800/60 p-4 rounded-2xl border border-slate-700/50 hover:border-amber-500/30 hover:bg-slate-800 transition-all group">
+                                                <div className="flex items-center gap-4">
+                                                    <div className="relative">
+                                                        <span className={`font-black text-xl italic tracking-tighter ${i === 0 ? 'text-amber-400' : i === 1 ? 'text-slate-300' : i === 2 ? 'text-amber-700' : 'text-slate-600'}`}>#{i + 1}</span>
+                                                    </div>
+                                                    <div className="w-12 h-12 rounded-full bg-slate-700 overflow-hidden border-2 border-slate-600 group-hover:border-amber-400/50 transition-colors shadow-inner">
+                                                        {lb.avatar ? <img src={lb.avatar} className="w-full h-full object-cover" /> : <div className="flex items-center justify-center w-full h-full text-lg">👤</div>}
+                                                    </div>
+                                                    <div className="flex flex-col">
+                                                        <span className="text-white font-black text-base md:text-lg tracking-wide group-hover:text-amber-100 transition-colors">{lb.username}</span>
+                                                        <div className="text-[10px] text-slate-400 font-black uppercase tracking-widest flex items-center gap-3 mt-0.5">
+                                                            <span className="flex items-center gap-1.5 bg-red-500/10 text-red-400 px-2 py-0.5 rounded-full border border-red-500/20">💀 {lb.total_kills || 0} <span className="text-[8px] opacity-60">KILLS</span></span>
+                                                            <span className="flex items-center gap-1.5 bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded-full border border-blue-500/20">🕒 {Math.floor((lb.playtime || 0) / 60)}m <span className="text-[8px] opacity-60">PLAY</span></span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="flex flex-col items-end">
+                                                    <span className="text-amber-400 font-mono font-black text-2xl drop-shadow-[0_0_8px_rgba(245,158,11,0.3)]">{lb.highscore || lb.score || 0}</span>
+                                                    <span className="text-[9px] text-slate-500 font-black uppercase tracking-widest">Global Rank</span>
                                                 </div>
                                             </div>
-                                        </div>
-                                        <div className="flex flex-col items-end">
-                                            <span className="text-cyan-400 font-mono font-black text-xl">{lb.highscore || lb.score || 0}</span>
-                                            <span className="text-[8px] text-slate-500 font-black uppercase">High Score</span>
-                                        </div>
+                                        ))}
                                     </div>
-                                )) : (
-                                    <div className="text-center text-slate-500 py-10 font-bold">Loading Hall of Fame...</div>
+                                ) : (
+                                    <div className="text-center text-slate-500 py-16 flex flex-col items-center gap-4 italic font-bold">
+                                        <div className="text-4xl opacity-20">📜</div>
+                                        <div>No legends have risen yet.<br/><span className="text-[10px] uppercase font-black not-italic text-slate-600 tracking-tighter">Your name could be the first!</span></div>
+                                    </div>
                                 )}
                             </div>
                         </div>
@@ -2797,7 +2781,7 @@ export default function PixShotMega() {
                             {friendTab === 'friends' && friends.length === 0 && <div className="text-center text-slate-500 py-8 font-bold text-sm">No friends added yet. Make some in "All Players"!</div>}
 
                             {/* TAB: REQUESTS */}
-                            {friendTab === 'requests' && friendRequests.map((r, i) => (
+                            {friendTab === 'requests' && friendRequests.map((r: any, i: number) => (
                                 <div key={i} className="flex justify-between items-center bg-slate-800/80 p-4 rounded-xl border border-amber-500/30">
                                     <div>
                                         <div className="font-bold text-white text-lg">{r.name}</div>
@@ -2819,7 +2803,7 @@ export default function PixShotMega() {
                             {friendTab === 'requests' && friendRequests.length === 0 && <div className="text-center text-slate-500 py-8 font-bold text-sm">No pending requests.</div>}
 
                             {/* TAB: ALL PLAYERS */}
-                            {friendTab === 'all' && allPlayers.filter(p => p.username.toLowerCase().includes(addFriendInput.toLowerCase()) || p.uid.toLowerCase().includes(addFriendInput.toLowerCase())).map((f, i) => (
+                            {friendTab === 'all' && allPlayers.filter((p: any) => p.username.toLowerCase().includes(addFriendInput.toLowerCase()) || (p.uid || '').toLowerCase().includes(addFriendInput.toLowerCase())).map((f: any, i: number) => (
                                 <div key={i} className="flex justify-between items-center bg-slate-800/80 p-4 rounded-xl border border-slate-700">
                                     <div className="flex items-center gap-3">
                                         <div className="w-10 h-10 rounded-full bg-slate-700 border border-slate-500 overflow-hidden shrink-0 cursor-pointer" onClick={() => setInspectUser(f)}>
@@ -2868,65 +2852,80 @@ export default function PixShotMega() {
                             <button onClick={() => setUiState(p => ({ ...p, showProfile: false }))} className="text-slate-500 hover:text-white text-xl font-bold">✕</button>
                         </div>
                         <div className="flex flex-col gap-5">
-                            <div className="flex justify-between items-end border-b border-slate-800 pb-4">
-                                <div>
-                                    <div className="flex items-center gap-4">
-                                        <div className="relative group cursor-pointer w-16 h-16 rounded-full bg-slate-800 border-2 border-cyan-500 overflow-hidden">
-                                            {globalProfile.avatar ? <img src={globalProfile.avatar} alt="Avatar" className="w-full h-full object-cover" /> : <div className="flex items-center justify-center w-full h-full text-2xl">👤</div>}
-                                            {auth.isLoggedIn && (
-                                                <label className="absolute inset-0 bg-black/60 flex items-center justify-center text-[10px] font-bold text-white opacity-0 group-hover:opacity-100 transition-opacity uppercase tracking-widest text-center">
-                                                    Change
-                                                    <input type="file" accept="image/*" className="hidden" onChange={(e) => {
-                                                        const file = e.target.files?.[0];
-                                                        if (file) {
-                                                            const reader = new FileReader();
-                                                            reader.onloadend = () => { saveProfile({ ...globalProfile, avatar: reader.result as string }); };
-                                                            reader.readAsDataURL(file);
-                                                        }
-                                                    }} />
-                                                </label>
-                                            )}
+                                <div className="border-b border-slate-800 pb-6 mb-2">
+                                    <div className="flex items-center justify-between gap-4">
+                                        <div className="flex items-center gap-4">
+                                            <div className="relative group cursor-pointer w-20 h-20 rounded-2xl bg-slate-800 border-2 border-cyan-500 overflow-hidden shadow-[0_0_20px_rgba(6,182,212,0.2)]">
+                                                {globalProfile.avatar ? <img src={globalProfile.avatar} alt="Avatar" className="w-full h-full object-cover" /> : <div className="flex items-center justify-center w-full h-full text-3xl">👤</div>}
+                                                {auth.isLoggedIn && (
+                                                    <label className="absolute inset-0 bg-black/70 flex items-center justify-center text-[10px] font-black text-white opacity-0 group-hover:opacity-100 transition-opacity uppercase tracking-widest text-center cursor-pointer p-2">
+                                                        Change Avatar
+                                                        <input type="file" accept="image/*" className="hidden" onChange={(e) => {
+                                                            const file = e.target.files?.[0];
+                                                            if (file) {
+                                                                const reader = new FileReader();
+                                                                reader.onloadend = () => { saveProfile({ ...globalProfile, avatar: reader.result as string }); };
+                                                                reader.readAsDataURL(file);
+                                                            }
+                                                        }} />
+                                                    </label>
+                                                )}
+                                            </div>
+                                            <div>
+                                                <div className="text-2xl font-black text-white tracking-tight">{auth.isLoggedIn ? auth.username : globalProfile.username}</div>
+                                                <div className="inline-flex items-center gap-2 bg-cyan-500/10 border border-cyan-500/20 px-3 py-1 rounded-full mt-2">
+                                                    <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></div>
+                                                    <div className="text-[10px] font-black font-mono text-cyan-400 uppercase tracking-widest">UID: {auth.isLoggedIn ? auth.uid : globalProfile.uid}</div>
+                                                </div>
+                                            </div>
                                         </div>
-                                        <div>
-                                            <div className="text-2xl font-black text-white">{auth.isLoggedIn ? auth.username : globalProfile.username}</div>
-                                            <div className="text-sm font-mono text-cyan-500 mt-1">UID: {auth.isLoggedIn ? auth.uid : globalProfile.uid}</div>
-                                        </div>
+                                        {auth.isLoggedIn && <button onClick={logout} className="bg-red-500/10 text-red-400 border border-red-500/30 px-4 py-3 rounded-xl font-black hover:bg-red-500/20 text-xs uppercase tracking-widest transition-all">Logout</button>}
                                     </div>
                                 </div>
-                                {auth.isLoggedIn && <button onClick={logout} className="bg-red-500/20 text-red-400 border border-red-500/50 px-4 py-2 rounded-lg font-bold hover:bg-red-500/30 text-sm">Logout</button>}
-                            </div>
-
-                            {!auth.isLoggedIn && (
-                                <div className="bg-amber-500/10 border border-amber-500/30 p-4 rounded-xl">
-                                    <p className="text-amber-400 text-xs font-bold mb-3">You are playing as Guest. Your data might be lost.</p>
-                                    <button onClick={() => { setUiState(p => ({ ...p, showProfile: false, showAuth: true })) }} className="w-full bg-amber-500 hover:bg-amber-400 text-black font-bold py-2 rounded-lg text-sm">Register / Login Now</button>
-                                </div>
-                            )}
-
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 flex flex-col items-center justify-center text-center">
-                                    <div className="text-[10px] text-slate-400 uppercase tracking-widest">High Score</div>
-                                    <div className="text-2xl text-white font-mono font-black mt-1">{globalProfile.highscore}</div>
-                                </div>
-                                <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 flex flex-col items-center justify-center text-center">
-                                    <div className="text-[10px] text-slate-400 uppercase tracking-widest">Total Kills</div>
-                                    <div className="text-2xl text-emerald-400 font-mono font-black mt-1">{globalProfile.totalKills}</div>
-                                </div>
-                                <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 flex flex-col items-center justify-center text-center">
-                                    <div className="text-[10px] text-slate-400 uppercase tracking-widest">K/M Ratio</div>
-                                    <div className="text-2xl text-purple-400 font-mono font-black mt-1">{(globalProfile.totalKills / Math.max(1, globalProfile.matches)).toFixed(1)}</div>
-                                </div>
-                                <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 flex flex-col items-center justify-center text-center col-span-2">
-                                    <div className="text-[10px] text-slate-400 uppercase tracking-widest">Total Playtime</div>
-                                    <div className="text-xl text-amber-400 font-mono font-black mt-1">
-                                        {Math.floor(globalProfile.playtime / 3600)}h {Math.floor((globalProfile.playtime % 3600) / 60)}m {globalProfile.playtime % 60}s
+                            <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 py-2 flex flex-col gap-6">
+                                {/* STATS GRID */}
+                                <div className="grid grid-cols-2 gap-3 md:gap-4 shrink-0">
+                                    <div className="bg-slate-800/40 p-4 rounded-2xl border border-slate-700/30 flex flex-col gap-1 hover:bg-slate-800/60 transition-colors">
+                                        <div className="text-[10px] text-slate-500 font-black uppercase tracking-[0.2em]">High Score</div>
+                                        <div className="text-xl md:text-2xl font-black text-amber-400 font-mono tracking-tight">{globalProfile.highscore}</div>
+                                    </div>
+                                    <div className="bg-slate-800/40 p-4 rounded-2xl border border-slate-700/30 flex flex-col gap-1 hover:bg-slate-800/60 transition-colors">
+                                        <div className="text-[10px] text-slate-500 font-black uppercase tracking-[0.2em]">Total Kills</div>
+                                        <div className="text-xl md:text-2xl font-black text-red-500 font-mono tracking-tight">{globalProfile.totalKills}</div>
+                                    </div>
+                                    <div className="bg-slate-800/40 p-4 rounded-2xl border border-slate-700/30 flex flex-col gap-1 hover:bg-slate-800/60 transition-colors">
+                                        <div className="text-[10px] text-slate-500 font-black uppercase tracking-[0.2em]">Matches</div>
+                                        <div className="text-xl md:text-2xl font-black text-cyan-400 font-mono tracking-tight">{globalProfile.matches}</div>
+                                    </div>
+                                    <div className="bg-slate-800/40 p-4 rounded-2xl border border-slate-700/30 flex flex-col gap-1 hover:bg-slate-800/60 transition-colors">
+                                        <div className="text-[10px] text-slate-500 font-black uppercase tracking-[0.2em]">Total Win</div>
+                                        <div className="text-xl md:text-2xl font-black text-emerald-400 font-mono tracking-tight">{Math.floor(globalProfile.matches * 0.1)}</div>
                                     </div>
                                 </div>
-                                <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 flex flex-col items-center justify-center text-center h-24">
-                                    <div className="absolute inset-0 bg-amber-400/5"></div>
-                                    <div className="text-[10px] text-amber-500/80 uppercase tracking-widest relative z-10 font-bold">Bank Balance</div>
-                                    <div className="text-2xl text-amber-400 font-mono font-black mt-1 relative z-10">{globalProfile.coins} 🪙</div>
+
+                                {/* PLAYTIME SECTION */}
+                                <div className="bg-indigo-500/5 p-5 rounded-2xl border border-indigo-500/20 flex flex-col gap-2 shrink-0">
+                                    <div className="text-[10px] text-indigo-400 font-black uppercase tracking-[0.3em] flex items-center justify-between">
+                                        <span>Total Playtime</span>
+                                        <span className="text-slate-500 font-bold">Accumulated</span>
+                                    </div>
+                                    <div className="text-2xl md:text-3xl font-black text-white font-mono tracking-tighter">
+                                        {Math.floor((globalProfile.playtime || 0) / 3600)}h {Math.floor(((globalProfile.playtime || 0) % 3600) / 60)}m <span className="text-indigo-400/50">{(globalProfile.playtime || 0) % 60}s</span>
+                                    </div>
+                                    <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden mt-2">
+                                        <div className="h-full bg-indigo-500" style={{ width: Math.min(100, (globalProfile.playtime || 0) / 36000 * 100) + '%' }}></div>
+                                    </div>
                                 </div>
+
+                                {!auth.isLoggedIn && (
+                                    <div className="bg-amber-500/10 border border-amber-500/30 p-5 rounded-2xl flex flex-col gap-4 shrink-0 shadow-lg">
+                                        <div className="flex items-center gap-3">
+                                            <div className="text-2xl">⚠️</div>
+                                            <p className="text-amber-400 text-xs font-black uppercase tracking-wider leading-relaxed">Guest Session Active. Progress is stored locally and may be lost.</p>
+                                        </div>
+                                        <button onClick={() => { setUiState(p => ({ ...p, showProfile: false, showAuth: true })) }} className="w-full bg-amber-500 hover:bg-amber-400 text-black font-black py-4 rounded-xl text-xs uppercase tracking-[0.2em] transform active:scale-95 transition-all">Secure Account Now</button>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -2995,12 +2994,12 @@ export default function PixShotMega() {
                                 </button>
                             </div>
 
-                            <div className="bg-slate-800/30 p-4 rounded-xl border border-slate-700">
-                                <label className="text-xs text-slate-400 uppercase tracking-wider font-bold block mb-3">UI Scale Control: <span className="text-white">{Math.round(settings.uiScale * 100)}%</span></label>
+                            <div className="bg-slate-800/40 p-4 rounded-xl border border-slate-700/50">
+                                <label className="text-xs text-slate-400 uppercase tracking-widest font-black block mb-4">UI Global Scale: <span className="text-cyan-400">{Math.round(settings.uiScale * 100)}%</span></label>
                                 <div className="flex items-center gap-4">
-                                    <button onClick={() => setSettings(p => ({ ...p, uiScale: Math.max(0.5, p.uiScale - 0.1) }))} className="w-10 h-10 bg-slate-700 hover:bg-slate-600 rounded-lg flex items-center justify-center font-bold text-white shadow-md">-</button>
-                                    <input type="range" min="0.5" max="1.5" step="0.1" value={settings.uiScale} onChange={(e) => setSettings(p => ({ ...p, uiScale: parseFloat(e.target.value) }))} className="flex-1 accent-cyan-500" />
-                                    <button onClick={() => setSettings(p => ({ ...p, uiScale: Math.min(1.5, p.uiScale + 0.1) }))} className="w-10 h-10 bg-cyan-600 hover:bg-cyan-500 rounded-lg flex items-center justify-center font-bold text-white shadow-md">+</button>
+                                    <button onClick={() => setSettings(p => ({ ...p, uiScale: Math.max(0.5, p.uiScale - 0.1) }))} className="w-12 h-12 md:w-14 md:h-14 bg-slate-700 hover:bg-slate-600 rounded-xl flex items-center justify-center font-black text-white shadow-lg active:scale-95 transition-all text-xl">-</button>
+                                    <input type="range" min="0.5" max="1.5" step="0.1" value={settings.uiScale} onChange={(e) => setSettings(p => ({ ...p, uiScale: parseFloat(e.target.value) }))} className="flex-1 accent-cyan-500 h-2 bg-slate-700 rounded-full appearance-none cursor-pointer" />
+                                    <button onClick={() => setSettings(p => ({ ...p, uiScale: Math.min(1.5, p.uiScale + 0.1) }))} className="w-12 h-12 md:w-14 md:h-14 bg-cyan-600 hover:bg-cyan-500 rounded-xl flex items-center justify-center font-black text-white shadow-lg active:scale-95 transition-all text-xl">+</button>
                                 </div>
                             </div>
                         </div>
