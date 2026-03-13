@@ -3,7 +3,14 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://ckcwwfgmvdvemwclphrl.supabase.co';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_SDQmjW8XE0hSn6NpV4g15A_RNIf4KQd';
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Defensive check to prevent build errors if env vars are missing/empty
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.warn('[Supabase] Missing environment variables. Client will not be initialized.');
+}
+
+export const supabase = (supabaseUrl && supabaseAnonKey) 
+  ? createClient(supabaseUrl, supabaseAnonKey)
+  : {} as any; // Fallback to avoid breaking imports
 
 export type PlayerProfile = {
   uid: string;
