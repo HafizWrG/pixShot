@@ -887,7 +887,12 @@ export default function PixShotMega() {
         }
         // Enhanced Mobile Detection
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || (window.innerWidth <= 1024);
-        setSettings(prev => ({ ...prev, isMobile: isMobile, joystickScale: isMobile ? 1.2 : 1.0 }));
+        setSettings(prev => ({ 
+            ...prev, 
+            isMobile: isMobile, 
+            joystickScale: isMobile ? 1.2 : 1.0,
+            uiScale: isMobile ? 0.7 : 1.0
+        }));
 
         const loadSound = async (id: string, src: string) => {
             try {
@@ -2942,7 +2947,16 @@ export default function PixShotMega() {
                         <div className="flex flex-col gap-6">
                             <div>
                                 <label className="text-xs text-slate-400 uppercase tracking-wider font-bold block mb-3">Master Volume: <span className="text-white">{Math.round(settings.volume * 100)}%</span></label>
-                                <input type="range" min="0" max="1" step="0.1" value={settings.volume} onChange={(e) => setSettings(p => ({ ...p, volume: parseFloat(e.target.value) }))} className="w-full accent-cyan-500" />
+                                <input type="range" min="0" max="1" step="0.1" value={settings.volume} onChange={(e) => setSettings(p => ({ ...p, volume: parseFloat(e.target.value) }))} className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-500" />
+                            </div>
+
+                            <div>
+                                <label className="text-xs text-slate-400 uppercase tracking-wider font-bold block mb-3">UI Scale: <span className="text-white">{Math.round(settings.uiScale * 100)}%</span></label>
+                                <input type="range" min="0.5" max="1.5" step="0.05" value={settings.uiScale} onChange={(e) => setSettings(p => ({ ...p, uiScale: parseFloat(e.target.value) }))} className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-500" />
+                                <div className="flex justify-between mt-2">
+                                    <span className="text-[10px] text-slate-500 font-bold">Small</span>
+                                    <span className="text-[10px] text-slate-500 font-bold">Large</span>
+                                </div>
                             </div>
 
                             <div className="flex items-center justify-between bg-slate-800/50 p-4 rounded-xl border border-slate-700">
