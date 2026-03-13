@@ -1,6 +1,6 @@
 'use client';
 import React, { useEffect, useRef, useState } from 'react';
-import { supabase } from '@/lib/supabaseClient';
+import { supabase } from '@/lib/supa';
 import { io, Socket } from 'socket.io-client';
 
 // === GAME CONSTANTS ===
