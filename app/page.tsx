@@ -1,6 +1,6 @@
 'use client';
 import React, { useEffect, useRef, useState } from 'react';
-import { supabase } from '../lib/supabaseClient';
+import { supabase } from '@/lib/supabaseClient';
 import { io, Socket } from 'socket.io-client';
 
 // === GAME CONSTANTS ===
@@ -184,7 +184,7 @@ export default function PixShotMega() {
             console.error('[Socket] CRITICAL ERROR: You are using an INTERNAL Railway URL. The browser cannot connect to this.');
             console.error('[Socket] Please use your PUBLIC Railway domain settings instead (e.g. https://your-app.up.railway.app)');
             // Fallback to origin if we are on Vercel, or localhost if local
-            if (!isLocal) envUrl = undefined; 
+            if (!isLocal) envUrl = undefined;
         }
 
         // 1. Check Env Variable First (Correct way for production)
@@ -288,15 +288,15 @@ export default function PixShotMega() {
             if (parsedAuth.isLoggedIn) {
                 setUiState(p => ({ ...p, showAuth: false }));
                 supabase.from('players').select('*').eq('uid', parsedAuth.uid).single().then(({ data }: any) => {
-                    if (data) setGlobalProfile({ 
-                        username: data.username, 
-                        uid: data.uid, 
-                        coins: data.coins, 
-                        tokens: data.tokens, 
-                        highscore: data.highscore, 
-                        totalKills: data.total_kills, 
-                        matches: data.matches, 
-                        ownedClasses: data.owned_classes || ['basic'], 
+                    if (data) setGlobalProfile({
+                        username: data.username,
+                        uid: data.uid,
+                        coins: data.coins,
+                        tokens: data.tokens,
+                        highscore: data.highscore,
+                        totalKills: data.total_kills,
+                        matches: data.matches,
+                        ownedClasses: data.owned_classes || ['basic'],
                         avatar: data.avatar || '',
                         playtime: data.playtime || 0
                     });
@@ -440,7 +440,7 @@ export default function PixShotMega() {
 
         const finalUrl = socketUrl.endsWith('/') ? socketUrl.slice(0, -1) : socketUrl;
         console.log('[Socket] Final Connection URL:', finalUrl);
-        
+
         socketRef.current = io(finalUrl, {
             reconnection: true,
             reconnectionAttempts: Infinity,
@@ -450,7 +450,7 @@ export default function PixShotMega() {
             transports: ['polling', 'websocket'], // Polling first allows headers to bypass tunnels
             withCredentials: false,
             extraHeaders: {
-                "bypass-tunnel-reminder": "true" 
+                "bypass-tunnel-reminder": "true"
             }
         });
 
@@ -459,13 +459,13 @@ export default function PixShotMega() {
             setConnStatus('Connected');
             addToast('Connected to Game Server', 'info');
             socketRef.current?.emit('br:get_rooms');
-            
+
             // Presence Identify
             if (globalProfile.uid) {
-                socketRef.current?.emit('player:identify', { 
-                    uid: globalProfile.uid, 
-                    name: globalProfile.username, 
-                    avatar: globalProfile.avatar 
+                socketRef.current?.emit('player:identify', {
+                    uid: globalProfile.uid,
+                    name: globalProfile.username,
+                    avatar: globalProfile.avatar
                 });
             }
         });
@@ -483,17 +483,17 @@ export default function PixShotMega() {
             console.error('[Socket] Connection Error Type:', error.name);
             console.error('[Socket] Connection Error Message:', error.message);
             setConnStatus('Error');
-            
+
             if (window.location.hostname.includes('vercel.app') && !process.env.NEXT_PUBLIC_SOCKET_URL) {
                 addToast('CRITICAL: NEXT_PUBLIC_SOCKET_URL is missing in Vercel settings!', 'info');
                 console.error('You are running on Vercel but have not set the Railway Server URL in your Environment Variables.');
             }
-            
+
             if (finalUrl.includes('.railway.internal')) {
                 addToast('ERROR: Using INTERNAL Railway URL. Change to PUBLIC URL in Settings!', 'info');
                 console.error('You are using a .internal Railway URL. Browsers cannot reach this. Use your Public Domain instead.');
             }
-            
+
             if (error.message === 'xhr poll error' || error.message === 'websocket error') {
                 console.warn('[Socket] Transport error. Check if server is running at:', finalUrl);
             }
@@ -724,13 +724,13 @@ export default function PixShotMega() {
     const saveProfile = async (newProfile: any) => {
         setGlobalProfile(newProfile);
         if (auth.isLoggedIn && auth.uid) {
-            await supabase.from('players').update({ 
-                coins: newProfile.coins, 
-                tokens: newProfile.tokens, 
-                highscore: newProfile.highscore, 
-                total_kills: newProfile.totalKills, 
-                matches: newProfile.matches, 
-                owned_classes: newProfile.ownedClasses, 
+            await supabase.from('players').update({
+                coins: newProfile.coins,
+                tokens: newProfile.tokens,
+                highscore: newProfile.highscore,
+                total_kills: newProfile.totalKills,
+                matches: newProfile.matches,
+                owned_classes: newProfile.ownedClasses,
                 avatar: newProfile.avatar,
                 playtime: newProfile.playtime
             }).eq('uid', auth.uid);
@@ -749,7 +749,7 @@ export default function PixShotMega() {
                 setAuth(newAuth); localStorage.setItem('pixshot_auth', JSON.stringify(newAuth));
                 setGlobalProfile({ username: data.username, uid: data.uid, coins: 0, tokens: 0, highscore: 0, totalKills: 0, matches: 0, ownedClasses: ['basic'], avatar: '', playtime: 0 });
                 setUiState(p => ({ ...p, showAuth: false }));
-                
+
                 socketRef.current?.emit('player:identify', { uid: data.uid, name: data.username });
                 addToast("Registered successfully", 'info');
             } else { addToast("Register failed: User might exist or network error", 'info'); }
@@ -758,20 +758,20 @@ export default function PixShotMega() {
             if (!error && data) {
                 const newAuth = { isLoggedIn: true, username: data.username, uid: data.uid, password: authInput.pass };
                 setAuth(newAuth); localStorage.setItem('pixshot_auth', JSON.stringify(newAuth));
-                setGlobalProfile({ 
-                    username: data.username, 
-                    uid: data.uid, 
-                    coins: data.coins, 
-                    tokens: data.tokens, 
-                    highscore: data.highscore, 
-                    totalKills: data.total_kills, 
-                    matches: data.matches, 
-                    ownedClasses: data.owned_classes || ['basic'], 
+                setGlobalProfile({
+                    username: data.username,
+                    uid: data.uid,
+                    coins: data.coins,
+                    tokens: data.tokens,
+                    highscore: data.highscore,
+                    totalKills: data.total_kills,
+                    matches: data.matches,
+                    ownedClasses: data.owned_classes || ['basic'],
                     avatar: data.avatar || '',
                     playtime: data.playtime || 0
                 });
                 setUiState(p => ({ ...p, showAuth: false }));
-                
+
                 socketRef.current?.emit('player:identify', { uid: data.uid, name: data.username, avatar: data.avatar });
                 addToast("Logged in successfully", 'info');
             } else { addToast("Login failed: Incorrect username or password", 'info'); }
@@ -914,11 +914,11 @@ export default function PixShotMega() {
         // Enhanced Mobile Detection & Default Scaling
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || (window.innerWidth <= 1024);
         const isAndroid = /Android/i.test(navigator.userAgent);
-        setSettings(prev => ({ 
-            ...prev, 
-            isMobile: isMobile, 
+        setSettings(prev => ({
+            ...prev,
+            isMobile: isMobile,
             joystickScale: isMobile ? 1.4 : 1.0,
-            uiScale: isAndroid ? 1.0 : (isMobile ? 0.9 : 1.0) 
+            uiScale: isAndroid ? 1.0 : (isMobile ? 0.9 : 1.0)
         }));
 
         const loadSound = async (id: string, src: string) => {
@@ -1097,7 +1097,7 @@ export default function PixShotMega() {
             e.preventDefault();
 
             const touches = e.touches;
-            
+
             // Pinch to Zoom
             if (touches.length === 2) {
                 const dist = Math.hypot(touches[0].clientX - touches[1].clientX, touches[0].clientY - touches[1].clientY);
@@ -1121,7 +1121,7 @@ export default function PixShotMega() {
 
             for (let i = 0; i < touches.length; i++) {
                 const t = touches[i];
-                
+
                 // Left Joystick - Move
                 if (t.clientX < window.innerWidth / 2 && (touchStateRef.current.leftTouchId === null || touchStateRef.current.leftTouchId === t.identifier) && !foundLeft) {
                     touchStateRef.current.leftTouchId = t.identifier;
@@ -1132,14 +1132,14 @@ export default function PixShotMega() {
                     let maxDist = 50 * settings.joystickScale;
                     if (dist > maxDist) { dx = (dx / dist) * maxDist; dy = (dy / dist) * maxDist; }
                     newL = { active: true, dx: dx / maxDist, dy: dy / maxDist };
-                } 
+                }
                 // Right Joystick - Attack
                 else if (t.clientX >= window.innerWidth / 2 && (touchStateRef.current.rightTouchId === null || touchStateRef.current.rightTouchId === t.identifier) && !foundRight) {
                     touchStateRef.current.rightTouchId = t.identifier;
                     foundRight = true;
                     let originX = rightJoyOriginX;
                     let originY = rightJoyOriginY;
-                    
+
                     // Optional: Follow touch feature if far from base
                     // let distFromBase = Math.hypot(t.clientX - originX, t.clientY - originY);
                     // if (distFromBase > 150 * settings.joystickScale) { originX = t.clientX; originY = t.clientY; }
@@ -2211,8 +2211,8 @@ export default function PixShotMega() {
             }
 
             if (uiState.isPlaying && !uiState.isGameOver && settings.showMinimap) {
-                const mapSize = 160 * (settings.isMobile ? 0.8 : 1.0) * settings.uiScale; 
-                const mapX = canvas.width - mapSize - 24; 
+                const mapSize = 160 * (settings.isMobile ? 0.8 : 1.0) * settings.uiScale;
+                const mapX = canvas.width - mapSize - 24;
                 const mapY = settings.isMobile ? 24 : canvas.height - mapSize - 24;
                 ctx.save();
                 ctx.beginPath(); ctx.arc(mapX + mapSize / 2, mapY + mapSize / 2, mapSize / 2, 0, Math.PI * 2);
@@ -2260,11 +2260,11 @@ export default function PixShotMega() {
     ];
 
     return (
-        <div className="relative w-full h-full overflow-hidden bg-slate-950 select-none font-sans text-slate-100 touch-none" 
-             style={{ 
-                 padding: 'var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left)',
-                 fontSize: `${settings.uiScale * 100}%` 
-             }}>
+        <div className="relative w-full h-full overflow-hidden bg-slate-950 select-none font-sans text-slate-100 touch-none"
+            style={{
+                padding: 'var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left)',
+                fontSize: `${settings.uiScale * 100}%`
+            }}>
             <canvas ref={canvasRef} className="fixed inset-0 w-full h-full" style={{ cursor: 'crosshair' }} />
 
             {/* TOAST SYSTEM */}
@@ -2434,7 +2434,7 @@ export default function PixShotMega() {
                             {/* LEFT PANEL: HERO SHOWCASE */}
                             <div className="flex-1 flex flex-col items-center justify-center pt-8 md:pt-0 pointer-events-none">
                                 <h1 className="text-5xl md:text-8xl font-black text-transparent bg-clip-text bg-gradient-to-b from-cyan-400 to-blue-600 tracking-tighter drop-shadow-[0_0_30px_rgba(6,182,212,0.4)] mb-2 md:mb-4 text-center z-10 uppercase w-full">PixShot.io</h1>
-                                
+
                                 <div className="z-10 mb-4 md:mb-10 flex items-center gap-2 bg-slate-900/70 px-4 py-2 rounded-full border border-slate-700/50 backdrop-blur-md pointer-events-auto shadow-lg">
                                     <div className={`w-2 h-2 rounded-full animate-pulse ${connStatus === 'Connected' ? 'bg-emerald-400 shadow-[0_0_12px_#10b981]' : connStatus === 'Connecting' ? 'bg-amber-400 shadow-[0_0_12px_#f59e0b]' : 'bg-red-500 shadow-[0_0_12px_#ef4444]'}`}></div>
                                     <span className={`text-[10px] md:text-[12px] font-black uppercase tracking-[0.2em] ${connStatus === 'Connected' ? 'text-emerald-400' : connStatus === 'Connecting' ? 'text-amber-400' : 'text-red-400'}`}>Server: {connStatus}</span>
@@ -2594,7 +2594,14 @@ export default function PixShotMega() {
                         <div className="bg-slate-900 p-8 rounded-3xl border border-amber-500/50 w-full max-w-lg shadow-[0_0_50px_rgba(245,158,11,0.15)] flex flex-col gap-6 max-h-[85vh] overflow-hidden">
                             <div className="flex justify-between items-center border-b border-slate-800 pb-4 shrink-0">
                                 <h2 className="text-xl md:text-2xl font-black text-amber-400 tracking-widest uppercase flex items-center gap-3">🏆 Hall of Fame</h2>
-                                <button onClick={() => setUiState(p => ({ ...p, showLeaderboard: false }))} className="text-slate-500 hover:text-white text-2xl font-bold">✕</button>
+                                <div className="flex items-center gap-4">
+                                    <button onClick={async () => {
+                                        setGlobalTop(null);
+                                        const { data, error } = await supabase.from('players').select('username, highscore, total_kills, avatar, playtime').order('highscore', { ascending: false }).limit(20);
+                                        if (!error && data) setGlobalTop(data);
+                                    }} className="text-amber-500 hover:text-amber-400 text-xs font-black uppercase tracking-tighter bg-amber-500/10 px-3 py-1.5 rounded-lg border border-amber-500/20 active:scale-95 transition-all">Refresh</button>
+                                    <button onClick={() => setUiState(p => ({ ...p, showLeaderboard: false }))} className="text-slate-500 hover:text-white text-2xl font-bold">✕</button>
+                                </div>
                             </div>
                             <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-2">
                                 {globalTop === null ? (
@@ -2631,7 +2638,13 @@ export default function PixShotMega() {
                                 ) : (
                                     <div className="text-center text-slate-500 py-16 flex flex-col items-center gap-4 italic font-bold">
                                         <div className="text-4xl opacity-20">📜</div>
-                                        <div>No legends have risen yet.<br/><span className="text-[10px] uppercase font-black not-italic text-slate-600 tracking-tighter">Your name could be the first!</span></div>
+                                        <div>No legends in the Hall of Fame yet.<br /><span className="text-[10px] uppercase font-black not-italic text-slate-600 tracking-tighter">Note: Ensure your 'players' table has a Public SELECT policy in Supabase.</span></div>
+                                        <button onClick={async () => {
+                                            setGlobalTop(null);
+                                            const { data, error } = await supabase.from('players').select('username, highscore, total_kills, avatar, playtime').order('highscore', { ascending: false }).limit(20);
+                                            if (!error && data) setGlobalTop(data);
+                                            else setGlobalTop([]);
+                                        }} className="mt-4 bg-slate-800 hover:bg-slate-700 text-slate-400 px-6 py-2 rounded-xl text-xs uppercase font-black tracking-widest border border-slate-700 transition-all">Retry Fetch</button>
                                     </div>
                                 )}
                             </div>
@@ -2645,200 +2658,200 @@ export default function PixShotMega() {
                 <div className="absolute inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[80] pointer-events-auto">
                     <div className="origin-center transition-transform duration-500 w-full flex items-center justify-center p-4" style={{ transform: `scale(${settings.uiScale})` }}>
                         <div className="bg-slate-900 p-8 rounded-3xl border border-blue-500/50 w-full max-w-lg shadow-[0_0_50px_rgba(59,130,246,0.15)] flex flex-col max-h-[85vh] overflow-hidden">
-                        <div className="flex justify-between items-center border-b border-slate-800 pb-4 shrink-0">
-                            <h2 className="text-2xl font-black text-blue-400 tracking-widest uppercase flex items-center gap-3">👥 Connections</h2>
-                            <button onClick={() => setUiState(p => ({ ...p, showFriends: false }))} className="text-slate-500 hover:text-white text-xl font-bold">✕</button>
-                        </div>
+                            <div className="flex justify-between items-center border-b border-slate-800 pb-4 shrink-0">
+                                <h2 className="text-2xl font-black text-blue-400 tracking-widest uppercase flex items-center gap-3">👥 Connections</h2>
+                                <button onClick={() => setUiState(p => ({ ...p, showFriends: false }))} className="text-slate-500 hover:text-white text-xl font-bold">✕</button>
+                            </div>
 
-                        {/* Inspect Profile Modal */}
-                        {inspectUser && (
-                            <div className="absolute inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-[90] pointer-events-auto">
-                                <div className="bg-slate-900 border border-indigo-500/50 rounded-3xl p-8 max-w-sm w-full shadow-2xl relative">
-                                    <button onClick={() => setInspectUser(null)} className="absolute top-4 right-4 text-slate-400 hover:text-white">✕</button>
-                                    <div className="flex flex-col items-center gap-4 text-center">
-                                        <div className="w-24 h-24 rounded-full border-4 border-indigo-500 overflow-hidden shadow-[0_0_20px_rgba(99,102,241,0.5)]">
-                                            {inspectUser.avatar ? <img src={inspectUser.avatar} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center bg-slate-800 text-3xl">👤</div>}
-                                        </div>
-                                        <div>
-                                            <div className="text-3xl font-black text-white">{inspectUser.username}</div>
-                                            <div className="text-sm font-mono text-indigo-400">UID: {inspectUser.uid}</div>
-                                        </div>
-                                        <div className="grid grid-cols-2 gap-4 w-full mt-4">
-                                            <div className="bg-slate-800 rounded-xl p-3 border border-slate-700">
-                                                <div className="text-[10px] text-slate-400 uppercase font-bold tracking-widest leading-none mb-1">Kills</div>
-                                                <div className="text-xl font-black text-red-400 font-mono">{inspectUser.total_kills || inspectUser.totalKills || 0}</div>
+                            {/* Inspect Profile Modal */}
+                            {inspectUser && (
+                                <div className="absolute inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-[90] pointer-events-auto">
+                                    <div className="bg-slate-900 border border-indigo-500/50 rounded-3xl p-8 max-w-sm w-full shadow-2xl relative">
+                                        <button onClick={() => setInspectUser(null)} className="absolute top-4 right-4 text-slate-400 hover:text-white">✕</button>
+                                        <div className="flex flex-col items-center gap-4 text-center">
+                                            <div className="w-24 h-24 rounded-full border-4 border-indigo-500 overflow-hidden shadow-[0_0_20px_rgba(99,102,241,0.5)]">
+                                                {inspectUser.avatar ? <img src={inspectUser.avatar} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center bg-slate-800 text-3xl">👤</div>}
                                             </div>
-                                            <div className="bg-slate-800 rounded-xl p-3 border border-slate-700">
-                                                <div className="text-[10px] text-slate-400 uppercase font-bold tracking-widest leading-none mb-1">Highscore</div>
-                                                <div className="text-xl font-black text-amber-400 font-mono">{inspectUser.highscore || 0}</div>
+                                            <div>
+                                                <div className="text-3xl font-black text-white">{inspectUser.username}</div>
+                                                <div className="text-sm font-mono text-indigo-400">UID: {inspectUser.uid}</div>
                                             </div>
-                                            <div className="bg-slate-800 rounded-xl p-3 border border-slate-700 col-span-2">
-                                                <div className="text-[10px] text-slate-400 uppercase font-bold tracking-widest leading-none mb-1">Total Playtime</div>
-                                                <div className="text-sm font-black text-cyan-400 font-mono">
-                                                    {Math.floor((inspectUser.playtime || 0) / 3600)}h {Math.floor(((inspectUser.playtime || 0) % 3600) / 60)}m
+                                            <div className="grid grid-cols-2 gap-4 w-full mt-4">
+                                                <div className="bg-slate-800 rounded-xl p-3 border border-slate-700">
+                                                    <div className="text-[10px] text-slate-400 uppercase font-bold tracking-widest leading-none mb-1">Kills</div>
+                                                    <div className="text-xl font-black text-red-400 font-mono">{inspectUser.total_kills || inspectUser.totalKills || 0}</div>
+                                                </div>
+                                                <div className="bg-slate-800 rounded-xl p-3 border border-slate-700">
+                                                    <div className="text-[10px] text-slate-400 uppercase font-bold tracking-widest leading-none mb-1">Highscore</div>
+                                                    <div className="text-xl font-black text-amber-400 font-mono">{inspectUser.highscore || 0}</div>
+                                                </div>
+                                                <div className="bg-slate-800 rounded-xl p-3 border border-slate-700 col-span-2">
+                                                    <div className="text-[10px] text-slate-400 uppercase font-bold tracking-widest leading-none mb-1">Total Playtime</div>
+                                                    <div className="text-sm font-black text-cyan-400 font-mono">
+                                                        {Math.floor((inspectUser.playtime || 0) / 3600)}h {Math.floor(((inspectUser.playtime || 0) % 3600) / 60)}m
+                                                    </div>
                                                 </div>
                                             </div>
+                                            <button onClick={() => {
+                                                openPrivateChat(inspectUser);
+                                                setInspectUser(null);
+                                            }} className="w-full mt-4 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl uppercase tracking-widest border border-indigo-400/50">
+                                                Send Direct Message
+                                            </button>
                                         </div>
-                                        <button onClick={() => {
-                                            openPrivateChat(inspectUser);
-                                            setInspectUser(null);
-                                        }} className="w-full mt-4 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl uppercase tracking-widest border border-indigo-400/50">
-                                            Send Direct Message
-                                        </button>
                                     </div>
                                 </div>
-                            </div>
-                        )}
+                            )}
 
-                        {/* Private Chat Modal */}
-                        {privateChat && (
-                            <div className="absolute bottom-6 right-6 w-80 bg-slate-900 border border-slate-600 rounded-2xl shadow-2xl z-[90] flex flex-col pointer-events-auto overflow-hidden">
-                                <div className="bg-indigo-600 px-4 py-3 flex justify-between items-center text-white font-bold">
-                                    <div className="flex items-center gap-2"><span className="text-xs">💬</span> {privateChat.name}</div>
-                                    <button onClick={() => setPrivateChat(null)} className="text-white hover:text-slate-200">✕</button>
-                                </div>
-                                <div className="flex-1 p-4 flex flex-col gap-2 max-h-64 overflow-y-auto bg-slate-800/50">
-                                    {privateChat.msgs.length === 0 && <div className="text-slate-500 text-xs text-center font-bold">Send a message to start chatting</div>}
-                                    {privateChat.msgs.map((m, i) => (
-                                        <div key={i} className={`flex flex-col ${m.sender === auth.username ? 'items-end' : 'items-start'}`}>
-                                            <div className={`px-3 py-2 rounded-xl text-sm max-w-[80%] ${m.sender === auth.username ? 'bg-indigo-500 text-white rounded-tr-none' : 'bg-slate-700 text-white rounded-tl-none'}`}>
-                                                {m.text}
+                            {/* Private Chat Modal */}
+                            {privateChat && (
+                                <div className="absolute bottom-6 right-6 w-80 bg-slate-900 border border-slate-600 rounded-2xl shadow-2xl z-[90] flex flex-col pointer-events-auto overflow-hidden">
+                                    <div className="bg-indigo-600 px-4 py-3 flex justify-between items-center text-white font-bold">
+                                        <div className="flex items-center gap-2"><span className="text-xs">💬</span> {privateChat.name}</div>
+                                        <button onClick={() => setPrivateChat(null)} className="text-white hover:text-slate-200">✕</button>
+                                    </div>
+                                    <div className="flex-1 p-4 flex flex-col gap-2 max-h-64 overflow-y-auto bg-slate-800/50">
+                                        {privateChat.msgs.length === 0 && <div className="text-slate-500 text-xs text-center font-bold">Send a message to start chatting</div>}
+                                        {privateChat.msgs.map((m, i) => (
+                                            <div key={i} className={`flex flex-col ${m.sender === auth.username ? 'items-end' : 'items-start'}`}>
+                                                <div className={`px-3 py-2 rounded-xl text-sm max-w-[80%] ${m.sender === auth.username ? 'bg-indigo-500 text-white rounded-tr-none' : 'bg-slate-700 text-white rounded-tl-none'}`}>
+                                                    {m.text}
+                                                </div>
+                                                <div className="text-[9px] text-slate-500 font-bold mt-1">{new Date(m.time).toLocaleTimeString()}</div>
                                             </div>
-                                            <div className="text-[9px] text-slate-500 font-bold mt-1">{new Date(m.time).toLocaleTimeString()}</div>
-                                        </div>
-                                    ))}
-                                </div>
-                                <div className="p-3 bg-slate-800 border-t border-slate-700 flex gap-2">
-                                    <input type="text" className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:border-indigo-400 outline-none" placeholder="Type..." value={privateChatMsg} onChange={e => setPrivateChatMsg(e.target.value)} onKeyDown={e => {
-                                        if (e.key === 'Enter' && privateChatMsg.trim()) {
-                                            const uName = auth.username || globalProfile.username;
-                                            const uUid = auth.uid || globalProfile.uid;
-                                            const newMsg = { fromUid: uUid, fromName: uName, toUid: privateChat.uid, text: privateChatMsg };
-                                            socketRef.current?.emit('chat:private', newMsg);
-                                            if (auth.isLoggedIn) supabase.from('private_chats').insert({ from_uid: auth.uid, to_uid: privateChat.uid, message: privateChatMsg }).then();
-                                            setPrivateChat(prev => prev ? { ...prev, msgs: [...prev.msgs, { sender: uName, text: privateChatMsg, time: Date.now() }] } : prev);
-                                            setPrivateChatMsg('');
-                                        }
-                                    }} />
-                                    <button className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-2 rounded-lg text-sm font-bold" onClick={() => {
-                                        if (privateChatMsg.trim()) {
-                                            const uName = auth.username || globalProfile.username;
-                                            const uUid = auth.uid || globalProfile.uid;
-                                            const newMsg = { fromUid: uUid, fromName: uName, toUid: privateChat.uid, text: privateChatMsg };
-                                            socketRef.current?.emit('chat:private', newMsg);
-                                            if (auth.isLoggedIn) supabase.from('private_chats').insert({ from_uid: auth.uid, to_uid: privateChat.uid, message: privateChatMsg }).then();
-                                            setPrivateChat(prev => prev ? { ...prev, msgs: [...prev.msgs, { sender: uName, text: privateChatMsg, time: Date.now() }] } : prev);
-                                            setPrivateChatMsg('');
-                                        }
-                                    }}>Send</button>
-                                </div>
-                            </div>
-                        )}
-                        <div className="flex shrink-0 border-b border-slate-800 mt-4 mb-4">
-                            <button onClick={() => setFriendTab('friends')} className={`flex-1 pb-2 font-bold uppercase tracking-wider text-sm transition-colors ${friendTab === 'friends' ? 'text-blue-400 border-b-2 border-blue-400' : 'text-slate-500 hover:text-slate-300'}`}>Friends ({friends.length})</button>
-                            <button onClick={() => setFriendTab('requests')} className={`flex-1 pb-2 font-bold uppercase tracking-wider text-sm transition-colors ${friendTab === 'requests' ? 'text-amber-400 border-b-2 border-amber-400' : 'text-slate-500 hover:text-slate-300'}`}>Requests ({friendRequests.length})</button>
-                            <button onClick={() => setFriendTab('all')} className={`flex-1 pb-2 font-bold uppercase tracking-wider text-sm transition-colors ${friendTab === 'all' ? 'text-cyan-400 border-b-2 border-cyan-400' : 'text-slate-500 hover:text-slate-300'}`}>All Players</button>
-                        </div>
-
-                        {/* Search Bar - only in ALL */}
-                        {friendTab === 'all' && (
-                            <div className="shrink-0 mb-4">
-                                <input type="text" placeholder="Search Player by name or UID..." className="w-full bg-slate-800 border border-slate-600 text-white px-4 py-3 rounded-xl outline-none focus:border-blue-400 font-bold text-sm" value={addFriendInput} onChange={e => setAddFriendInput(e.target.value)} />
-                            </div>
-                        )}
-
-                        <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-3 pr-2">
-                            {/* TAB: FRIENDS */}
-                            {friendTab === 'friends' && friends.map((f, i) => (
-                                <div key={i} className="flex justify-between items-center bg-slate-800/80 p-4 rounded-xl border border-slate-700 hover:border-slate-500 transition-colors">
-                                    <div className="flex items-center gap-3 cursor-pointer" onClick={() => {
-                                        const idx = allPlayers.find(p => p.uid === f.uid);
-                                        if (idx) setInspectUser(idx);
-                                    }}>
-                                        <div className="w-10 h-10 rounded-full bg-slate-700 border border-slate-500 overflow-hidden shrink-0">
-                                            {allPlayers.find(p => p.uid === f.uid)?.avatar ? <img src={allPlayers.find(p => p.uid === f.uid)?.avatar} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-xs text-slate-400 font-black">👤</div>}
-                                        </div>
-                                        <div>
-                                            <div className="font-bold text-white text-lg">{f.name}</div>
-                                            <div className={`text-xs font-bold mt-1 ${f.status === 'Online' ? 'text-emerald-400' : 'text-amber-400'}`}>• {f.status} {f.lastSeen ? `(Seen: ${new Date(f.lastSeen).toLocaleTimeString()})` : ''}</div>
-                                        </div>
+                                        ))}
                                     </div>
-                                    <div className="flex gap-2 shrink-0">
-                                        <button onClick={() => openPrivateChat({ uid: f.uid, name: f.name })} className="text-xl px-2 text-indigo-400 hover:text-indigo-300" title="Private Chat">💬</button>
-                                        <button onClick={async () => {
-                                            if (window.confirm(`Unfriend ${f.name}?`)) {
-                                                await supabase.from('friends').delete().match({ user_uid: auth.uid, friend_uid: f.uid });
-                                                await supabase.from('friends').delete().match({ user_uid: f.uid, friend_uid: auth.uid });
-                                                loadFriends();
+                                    <div className="p-3 bg-slate-800 border-t border-slate-700 flex gap-2">
+                                        <input type="text" className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:border-indigo-400 outline-none" placeholder="Type..." value={privateChatMsg} onChange={e => setPrivateChatMsg(e.target.value)} onKeyDown={e => {
+                                            if (e.key === 'Enter' && privateChatMsg.trim()) {
+                                                const uName = auth.username || globalProfile.username;
+                                                const uUid = auth.uid || globalProfile.uid;
+                                                const newMsg = { fromUid: uUid, fromName: uName, toUid: privateChat.uid, text: privateChatMsg };
+                                                socketRef.current?.emit('chat:private', newMsg);
+                                                if (auth.isLoggedIn) supabase.from('private_chats').insert({ from_uid: auth.uid, to_uid: privateChat.uid, message: privateChatMsg }).then();
+                                                setPrivateChat(prev => prev ? { ...prev, msgs: [...prev.msgs, { sender: uName, text: privateChatMsg, time: Date.now() }] } : prev);
+                                                setPrivateChatMsg('');
                                             }
-                                        }} className="text-xl px-2 text-red-400 hover:text-red-300" title="Remove Friend">✖</button>
-                                        <button onClick={() => inviteToParty({ uid: f.uid, name: f.name })} disabled={party.some(p => p.uid === f.uid) || party.length >= 3} className="bg-cyan-600/20 hover:bg-cyan-600/40 text-cyan-400 border border-cyan-500/50 px-4 py-2 rounded-lg font-bold text-sm disabled:opacity-50">
-                                            Invite Mode
-                                        </button>
+                                        }} />
+                                        <button className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-2 rounded-lg text-sm font-bold" onClick={() => {
+                                            if (privateChatMsg.trim()) {
+                                                const uName = auth.username || globalProfile.username;
+                                                const uUid = auth.uid || globalProfile.uid;
+                                                const newMsg = { fromUid: uUid, fromName: uName, toUid: privateChat.uid, text: privateChatMsg };
+                                                socketRef.current?.emit('chat:private', newMsg);
+                                                if (auth.isLoggedIn) supabase.from('private_chats').insert({ from_uid: auth.uid, to_uid: privateChat.uid, message: privateChatMsg }).then();
+                                                setPrivateChat(prev => prev ? { ...prev, msgs: [...prev.msgs, { sender: uName, text: privateChatMsg, time: Date.now() }] } : prev);
+                                                setPrivateChatMsg('');
+                                            }
+                                        }}>Send</button>
                                     </div>
                                 </div>
-                            ))}
-                            {friendTab === 'friends' && friends.length === 0 && <div className="text-center text-slate-500 py-8 font-bold text-sm">No friends added yet. Make some in "All Players"!</div>}
+                            )}
+                            <div className="flex shrink-0 border-b border-slate-800 mt-4 mb-4">
+                                <button onClick={() => setFriendTab('friends')} className={`flex-1 pb-2 font-bold uppercase tracking-wider text-sm transition-colors ${friendTab === 'friends' ? 'text-blue-400 border-b-2 border-blue-400' : 'text-slate-500 hover:text-slate-300'}`}>Friends ({friends.length})</button>
+                                <button onClick={() => setFriendTab('requests')} className={`flex-1 pb-2 font-bold uppercase tracking-wider text-sm transition-colors ${friendTab === 'requests' ? 'text-amber-400 border-b-2 border-amber-400' : 'text-slate-500 hover:text-slate-300'}`}>Requests ({friendRequests.length})</button>
+                                <button onClick={() => setFriendTab('all')} className={`flex-1 pb-2 font-bold uppercase tracking-wider text-sm transition-colors ${friendTab === 'all' ? 'text-cyan-400 border-b-2 border-cyan-400' : 'text-slate-500 hover:text-slate-300'}`}>All Players</button>
+                            </div>
 
-                            {/* TAB: REQUESTS */}
-                            {friendTab === 'requests' && friendRequests.map((r: any, i: number) => (
-                                <div key={i} className="flex justify-between items-center bg-slate-800/80 p-4 rounded-xl border border-amber-500/30">
-                                    <div>
-                                        <div className="font-bold text-white text-lg">{r.name}</div>
-                                        <div className="text-xs font-bold mt-1 text-amber-500">Wants to be friends</div>
-                                    </div>
-                                    <div className="flex gap-2">
-                                        <button onClick={async () => {
-                                            await supabase.from('friends').update({ status: 'accepted' }).match({ user_uid: r.uid, friend_uid: auth.uid });
-                                            await supabase.from('friends').insert({ user_uid: auth.uid, friend_uid: r.uid, friend_name: r.name, status: 'accepted' });
-                                            loadFriends();
-                                        }} className="bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 border border-emerald-500/50 px-4 py-2 rounded-lg font-bold text-sm">Accept</button>
-                                        <button onClick={async () => {
-                                            await supabase.from('friends').delete().match({ user_uid: r.uid, friend_uid: auth.uid });
-                                            loadFriends();
-                                        }} className="bg-red-600/20 hover:bg-red-600/40 text-red-400 border border-red-500/50 px-4 py-2 rounded-lg font-bold text-sm">Reject</button>
-                                    </div>
+                            {/* Search Bar - only in ALL */}
+                            {friendTab === 'all' && (
+                                <div className="shrink-0 mb-4">
+                                    <input type="text" placeholder="Search Player by name or UID..." className="w-full bg-slate-800 border border-slate-600 text-white px-4 py-3 rounded-xl outline-none focus:border-blue-400 font-bold text-sm" value={addFriendInput} onChange={e => setAddFriendInput(e.target.value)} />
                                 </div>
-                            ))}
-                            {friendTab === 'requests' && friendRequests.length === 0 && <div className="text-center text-slate-500 py-8 font-bold text-sm">No pending requests.</div>}
+                            )}
 
-                            {/* TAB: ALL PLAYERS */}
-                            {friendTab === 'all' && allPlayers.filter((p: any) => p.username.toLowerCase().includes(addFriendInput.toLowerCase()) || (p.uid || '').toLowerCase().includes(addFriendInput.toLowerCase())).map((f: any, i: number) => (
-                                <div key={i} className="flex justify-between items-center bg-slate-800/80 p-4 rounded-xl border border-slate-700">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-full bg-slate-700 border border-slate-500 overflow-hidden shrink-0 cursor-pointer" onClick={() => setInspectUser(f)}>
-                                            {f.avatar ? <img src={f.avatar} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-xs text-slate-400 font-black">👤</div>}
+                            <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-3 pr-2">
+                                {/* TAB: FRIENDS */}
+                                {friendTab === 'friends' && friends.map((f, i) => (
+                                    <div key={i} className="flex justify-between items-center bg-slate-800/80 p-4 rounded-xl border border-slate-700 hover:border-slate-500 transition-colors">
+                                        <div className="flex items-center gap-3 cursor-pointer" onClick={() => {
+                                            const idx = allPlayers.find(p => p.uid === f.uid);
+                                            if (idx) setInspectUser(idx);
+                                        }}>
+                                            <div className="w-10 h-10 rounded-full bg-slate-700 border border-slate-500 overflow-hidden shrink-0">
+                                                {allPlayers.find(p => p.uid === f.uid)?.avatar ? <img src={allPlayers.find(p => p.uid === f.uid)?.avatar} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-xs text-slate-400 font-black">👤</div>}
+                                            </div>
+                                            <div>
+                                                <div className="font-bold text-white text-lg">{f.name}</div>
+                                                <div className={`text-xs font-bold mt-1 ${f.status === 'Online' ? 'text-emerald-400' : 'text-amber-400'}`}>• {f.status} {f.lastSeen ? `(Seen: ${new Date(f.lastSeen).toLocaleTimeString()})` : ''}</div>
+                                            </div>
                                         </div>
-                                        <div>
-                                            <div className="font-bold text-white text-lg cursor-pointer hover:underline" onClick={() => setInspectUser(f)}>{f.username}</div>
-                                            <div className={`text-xs font-bold mt-1 ${f.uid === auth.uid ? 'text-cyan-400' : 'text-slate-400'}`}>{f.uid === auth.uid ? '• (You)' : 'UID: ' + f.uid}</div>
-                                        </div>
-                                    </div>
-                                    <div className="flex gap-2">
-                                        {f.uid !== auth.uid && !friends.find(x => x.uid === f.uid) && (
+                                        <div className="flex gap-2 shrink-0">
+                                            <button onClick={() => openPrivateChat({ uid: f.uid, name: f.name })} className="text-xl px-2 text-indigo-400 hover:text-indigo-300" title="Private Chat">💬</button>
                                             <button onClick={async () => {
-                                                addToast(`Send friend request to ${f.username}?`, 'invite', {
-                                                    onAccept: async () => {
-                                                        await supabase.from('friends').insert({ user_uid: auth.uid, friend_uid: f.uid, friend_name: f.username, status: 'pending' });
-                                                        socketRef.current?.emit('friend:request', { user_uid: auth.uid, friend_uid: f.uid, user_name: auth.username || globalProfile.username });
-                                                        addToast("Friend request sent", 'info');
-                                                    }
-                                                });
-                                            }} className="bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 border border-blue-500/50 px-3 py-2 rounded-lg font-bold text-sm transition-colors">
-                                                + Add Friend
+                                                if (window.confirm(`Unfriend ${f.name}?`)) {
+                                                    await supabase.from('friends').delete().match({ user_uid: auth.uid, friend_uid: f.uid });
+                                                    await supabase.from('friends').delete().match({ user_uid: f.uid, friend_uid: auth.uid });
+                                                    loadFriends();
+                                                }
+                                            }} className="text-xl px-2 text-red-400 hover:text-red-300" title="Remove Friend">✖</button>
+                                            <button onClick={() => inviteToParty({ uid: f.uid, name: f.name })} disabled={party.some(p => p.uid === f.uid) || party.length >= 3} className="bg-cyan-600/20 hover:bg-cyan-600/40 text-cyan-400 border border-cyan-500/50 px-4 py-2 rounded-lg font-bold text-sm disabled:opacity-50">
+                                                Invite Mode
                                             </button>
-                                        )}
-                                        {f.uid !== auth.uid && (
-                                            <button onClick={() => inviteToParty({ uid: f.uid, name: f.username })} disabled={party.some(p => p.uid === f.uid) || party.length >= 3} className="bg-cyan-600/20 hover:bg-cyan-600/40 text-cyan-400 border border-cyan-500/50 px-3 py-2 rounded-lg font-bold text-sm disabled:opacity-50">
-                                                Invite
-                                            </button>
-                                        )}
+                                        </div>
                                     </div>
-                                </div>
-                            ))}
+                                ))}
+                                {friendTab === 'friends' && friends.length === 0 && <div className="text-center text-slate-500 py-8 font-bold text-sm">No friends added yet. Make some in "All Players"!</div>}
+
+                                {/* TAB: REQUESTS */}
+                                {friendTab === 'requests' && friendRequests.map((r: any, i: number) => (
+                                    <div key={i} className="flex justify-between items-center bg-slate-800/80 p-4 rounded-xl border border-amber-500/30">
+                                        <div>
+                                            <div className="font-bold text-white text-lg">{r.name}</div>
+                                            <div className="text-xs font-bold mt-1 text-amber-500">Wants to be friends</div>
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <button onClick={async () => {
+                                                await supabase.from('friends').update({ status: 'accepted' }).match({ user_uid: r.uid, friend_uid: auth.uid });
+                                                await supabase.from('friends').insert({ user_uid: auth.uid, friend_uid: r.uid, friend_name: r.name, status: 'accepted' });
+                                                loadFriends();
+                                            }} className="bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 border border-emerald-500/50 px-4 py-2 rounded-lg font-bold text-sm">Accept</button>
+                                            <button onClick={async () => {
+                                                await supabase.from('friends').delete().match({ user_uid: r.uid, friend_uid: auth.uid });
+                                                loadFriends();
+                                            }} className="bg-red-600/20 hover:bg-red-600/40 text-red-400 border border-red-500/50 px-4 py-2 rounded-lg font-bold text-sm">Reject</button>
+                                        </div>
+                                    </div>
+                                ))}
+                                {friendTab === 'requests' && friendRequests.length === 0 && <div className="text-center text-slate-500 py-8 font-bold text-sm">No pending requests.</div>}
+
+                                {/* TAB: ALL PLAYERS */}
+                                {friendTab === 'all' && allPlayers.filter((p: any) => p.username.toLowerCase().includes(addFriendInput.toLowerCase()) || (p.uid || '').toLowerCase().includes(addFriendInput.toLowerCase())).map((f: any, i: number) => (
+                                    <div key={i} className="flex justify-between items-center bg-slate-800/80 p-4 rounded-xl border border-slate-700">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 rounded-full bg-slate-700 border border-slate-500 overflow-hidden shrink-0 cursor-pointer" onClick={() => setInspectUser(f)}>
+                                                {f.avatar ? <img src={f.avatar} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-xs text-slate-400 font-black">👤</div>}
+                                            </div>
+                                            <div>
+                                                <div className="font-bold text-white text-lg cursor-pointer hover:underline" onClick={() => setInspectUser(f)}>{f.username}</div>
+                                                <div className={`text-xs font-bold mt-1 ${f.uid === auth.uid ? 'text-cyan-400' : 'text-slate-400'}`}>{f.uid === auth.uid ? '• (You)' : 'UID: ' + f.uid}</div>
+                                            </div>
+                                        </div>
+                                        <div className="flex gap-2">
+                                            {f.uid !== auth.uid && !friends.find(x => x.uid === f.uid) && (
+                                                <button onClick={async () => {
+                                                    addToast(`Send friend request to ${f.username}?`, 'invite', {
+                                                        onAccept: async () => {
+                                                            await supabase.from('friends').insert({ user_uid: auth.uid, friend_uid: f.uid, friend_name: f.username, status: 'pending' });
+                                                            socketRef.current?.emit('friend:request', { user_uid: auth.uid, friend_uid: f.uid, user_name: auth.username || globalProfile.username });
+                                                            addToast("Friend request sent", 'info');
+                                                        }
+                                                    });
+                                                }} className="bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 border border-blue-500/50 px-3 py-2 rounded-lg font-bold text-sm transition-colors">
+                                                    + Add Friend
+                                                </button>
+                                            )}
+                                            {f.uid !== auth.uid && (
+                                                <button onClick={() => inviteToParty({ uid: f.uid, name: f.username })} disabled={party.some(p => p.uid === f.uid) || party.length >= 3} className="bg-cyan-600/20 hover:bg-cyan-600/40 text-cyan-400 border border-cyan-500/50 px-3 py-2 rounded-lg font-bold text-sm disabled:opacity-50">
+                                                    Invite
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                     </div>
-                </div>
                 </div>
             )}
 
@@ -2847,11 +2860,11 @@ export default function PixShotMega() {
                 <div className="absolute inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[80] pointer-events-auto">
                     <div className="origin-center transition-transform duration-500 w-full flex items-center justify-center p-4" style={{ transform: `scale(${settings.uiScale})` }}>
                         <div className="bg-slate-900 p-8 rounded-3xl border border-slate-700 w-full max-w-md shadow-2xl flex flex-col gap-6 max-h-[85vh] overflow-y-auto custom-scrollbar">
-                        <div className="flex justify-between items-center border-b border-slate-800 pb-4">
-                            <h2 className="text-xl font-bold text-cyan-400 tracking-widest uppercase">Commander Profile</h2>
-                            <button onClick={() => setUiState(p => ({ ...p, showProfile: false }))} className="text-slate-500 hover:text-white text-xl font-bold">✕</button>
-                        </div>
-                        <div className="flex flex-col gap-5">
+                            <div className="flex justify-between items-center border-b border-slate-800 pb-4">
+                                <h2 className="text-xl font-bold text-cyan-400 tracking-widest uppercase">Commander Profile</h2>
+                                <button onClick={() => setUiState(p => ({ ...p, showProfile: false }))} className="text-slate-500 hover:text-white text-xl font-bold">✕</button>
+                            </div>
+                            <div className="flex flex-col gap-5">
                                 <div className="border-b border-slate-800 pb-6 mb-2">
                                     <div className="flex items-center justify-between gap-4">
                                         <div className="flex items-center gap-4">
@@ -2882,54 +2895,54 @@ export default function PixShotMega() {
                                         {auth.isLoggedIn && <button onClick={logout} className="bg-red-500/10 text-red-400 border border-red-500/30 px-4 py-3 rounded-xl font-black hover:bg-red-500/20 text-xs uppercase tracking-widest transition-all">Logout</button>}
                                     </div>
                                 </div>
-                            <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 py-2 flex flex-col gap-6">
-                                {/* STATS GRID */}
-                                <div className="grid grid-cols-2 gap-3 md:gap-4 shrink-0">
-                                    <div className="bg-slate-800/40 p-4 rounded-2xl border border-slate-700/30 flex flex-col gap-1 hover:bg-slate-800/60 transition-colors">
-                                        <div className="text-[10px] text-slate-500 font-black uppercase tracking-[0.2em]">High Score</div>
-                                        <div className="text-xl md:text-2xl font-black text-amber-400 font-mono tracking-tight">{globalProfile.highscore}</div>
-                                    </div>
-                                    <div className="bg-slate-800/40 p-4 rounded-2xl border border-slate-700/30 flex flex-col gap-1 hover:bg-slate-800/60 transition-colors">
-                                        <div className="text-[10px] text-slate-500 font-black uppercase tracking-[0.2em]">Total Kills</div>
-                                        <div className="text-xl md:text-2xl font-black text-red-500 font-mono tracking-tight">{globalProfile.totalKills}</div>
-                                    </div>
-                                    <div className="bg-slate-800/40 p-4 rounded-2xl border border-slate-700/30 flex flex-col gap-1 hover:bg-slate-800/60 transition-colors">
-                                        <div className="text-[10px] text-slate-500 font-black uppercase tracking-[0.2em]">Matches</div>
-                                        <div className="text-xl md:text-2xl font-black text-cyan-400 font-mono tracking-tight">{globalProfile.matches}</div>
-                                    </div>
-                                    <div className="bg-slate-800/40 p-4 rounded-2xl border border-slate-700/30 flex flex-col gap-1 hover:bg-slate-800/60 transition-colors">
-                                        <div className="text-[10px] text-slate-500 font-black uppercase tracking-[0.2em]">Total Win</div>
-                                        <div className="text-xl md:text-2xl font-black text-emerald-400 font-mono tracking-tight">{Math.floor(globalProfile.matches * 0.1)}</div>
-                                    </div>
-                                </div>
-
-                                {/* PLAYTIME SECTION */}
-                                <div className="bg-indigo-500/5 p-5 rounded-2xl border border-indigo-500/20 flex flex-col gap-2 shrink-0">
-                                    <div className="text-[10px] text-indigo-400 font-black uppercase tracking-[0.3em] flex items-center justify-between">
-                                        <span>Total Playtime</span>
-                                        <span className="text-slate-500 font-bold">Accumulated</span>
-                                    </div>
-                                    <div className="text-2xl md:text-3xl font-black text-white font-mono tracking-tighter">
-                                        {Math.floor((globalProfile.playtime || 0) / 3600)}h {Math.floor(((globalProfile.playtime || 0) % 3600) / 60)}m <span className="text-indigo-400/50">{(globalProfile.playtime || 0) % 60}s</span>
-                                    </div>
-                                    <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden mt-2">
-                                        <div className="h-full bg-indigo-500" style={{ width: Math.min(100, (globalProfile.playtime || 0) / 36000 * 100) + '%' }}></div>
-                                    </div>
-                                </div>
-
-                                {!auth.isLoggedIn && (
-                                    <div className="bg-amber-500/10 border border-amber-500/30 p-5 rounded-2xl flex flex-col gap-4 shrink-0 shadow-lg">
-                                        <div className="flex items-center gap-3">
-                                            <div className="text-2xl">⚠️</div>
-                                            <p className="text-amber-400 text-xs font-black uppercase tracking-wider leading-relaxed">Guest Session Active. Progress is stored locally and may be lost.</p>
+                                <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 py-2 flex flex-col gap-6">
+                                    {/* STATS GRID */}
+                                    <div className="grid grid-cols-2 gap-3 md:gap-4 shrink-0">
+                                        <div className="bg-slate-800/40 p-4 rounded-2xl border border-slate-700/30 flex flex-col gap-1 hover:bg-slate-800/60 transition-colors">
+                                            <div className="text-[10px] text-slate-500 font-black uppercase tracking-[0.2em]">High Score</div>
+                                            <div className="text-xl md:text-2xl font-black text-amber-400 font-mono tracking-tight">{globalProfile.highscore}</div>
                                         </div>
-                                        <button onClick={() => { setUiState(p => ({ ...p, showProfile: false, showAuth: true })) }} className="w-full bg-amber-500 hover:bg-amber-400 text-black font-black py-4 rounded-xl text-xs uppercase tracking-[0.2em] transform active:scale-95 transition-all">Secure Account Now</button>
+                                        <div className="bg-slate-800/40 p-4 rounded-2xl border border-slate-700/30 flex flex-col gap-1 hover:bg-slate-800/60 transition-colors">
+                                            <div className="text-[10px] text-slate-500 font-black uppercase tracking-[0.2em]">Total Kills</div>
+                                            <div className="text-xl md:text-2xl font-black text-red-500 font-mono tracking-tight">{globalProfile.totalKills}</div>
+                                        </div>
+                                        <div className="bg-slate-800/40 p-4 rounded-2xl border border-slate-700/30 flex flex-col gap-1 hover:bg-slate-800/60 transition-colors">
+                                            <div className="text-[10px] text-slate-500 font-black uppercase tracking-[0.2em]">Matches</div>
+                                            <div className="text-xl md:text-2xl font-black text-cyan-400 font-mono tracking-tight">{globalProfile.matches}</div>
+                                        </div>
+                                        <div className="bg-slate-800/40 p-4 rounded-2xl border border-slate-700/30 flex flex-col gap-1 hover:bg-slate-800/60 transition-colors">
+                                            <div className="text-[10px] text-slate-500 font-black uppercase tracking-[0.2em]">Total Win</div>
+                                            <div className="text-xl md:text-2xl font-black text-emerald-400 font-mono tracking-tight">{Math.floor(globalProfile.matches * 0.1)}</div>
+                                        </div>
                                     </div>
-                                )}
+
+                                    {/* PLAYTIME SECTION */}
+                                    <div className="bg-indigo-500/5 p-5 rounded-2xl border border-indigo-500/20 flex flex-col gap-2 shrink-0">
+                                        <div className="text-[10px] text-indigo-400 font-black uppercase tracking-[0.3em] flex items-center justify-between">
+                                            <span>Total Playtime</span>
+                                            <span className="text-slate-500 font-bold">Accumulated</span>
+                                        </div>
+                                        <div className="text-2xl md:text-3xl font-black text-white font-mono tracking-tighter">
+                                            {Math.floor((globalProfile.playtime || 0) / 3600)}h {Math.floor(((globalProfile.playtime || 0) % 3600) / 60)}m <span className="text-indigo-400/50">{(globalProfile.playtime || 0) % 60}s</span>
+                                        </div>
+                                        <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden mt-2">
+                                            <div className="h-full bg-indigo-500" style={{ width: Math.min(100, (globalProfile.playtime || 0) / 36000 * 100) + '%' }}></div>
+                                        </div>
+                                    </div>
+
+                                    {!auth.isLoggedIn && (
+                                        <div className="bg-amber-500/10 border border-amber-500/30 p-5 rounded-2xl flex flex-col gap-4 shrink-0 shadow-lg">
+                                            <div className="flex items-center gap-3">
+                                                <div className="text-2xl">⚠️</div>
+                                                <p className="text-amber-400 text-xs font-black uppercase tracking-wider leading-relaxed">Guest Session Active. Progress is stored locally and may be lost.</p>
+                                            </div>
+                                            <button onClick={() => { setUiState(p => ({ ...p, showProfile: false, showAuth: true })) }} className="w-full bg-amber-500 hover:bg-amber-400 text-black font-black py-4 rounded-xl text-xs uppercase tracking-[0.2em] transform active:scale-95 transition-all">Secure Account Now</button>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
                 </div>
             )}
 
@@ -2938,73 +2951,73 @@ export default function PixShotMega() {
                 <div className="absolute inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[80] pointer-events-auto">
                     <div className="origin-center transition-transform duration-500 w-full flex items-center justify-center p-4" style={{ transform: `scale(${settings.uiScale})` }}>
                         <div className="bg-slate-900 p-8 rounded-3xl border border-slate-700 w-full max-w-md shadow-2xl flex flex-col gap-6 max-h-[85vh] overflow-y-auto custom-scrollbar">
-                        <div className="flex justify-between items-center border-b border-slate-800 pb-4">
-                            <h2 className="text-xl font-bold text-cyan-400 tracking-widest uppercase">Settings</h2>
-                            <button onClick={() => setUiState(p => ({ ...p, showSettings: false }))} className="text-slate-500 hover:text-white text-xl font-bold">✕</button>
-                        </div>
-
-                        <div className="flex flex-col gap-6">
-                            <div>
-                                <label className="text-xs text-slate-400 uppercase tracking-wider font-bold block mb-3">Master Volume: <span className="text-white">{Math.round(settings.volume * 100)}%</span></label>
-                                <input type="range" min="0" max="1" step="0.1" value={settings.volume} onChange={(e) => setSettings(p => ({ ...p, volume: parseFloat(e.target.value) }))} className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-500" />
+                            <div className="flex justify-between items-center border-b border-slate-800 pb-4">
+                                <h2 className="text-xl font-bold text-cyan-400 tracking-widest uppercase">Settings</h2>
+                                <button onClick={() => setUiState(p => ({ ...p, showSettings: false }))} className="text-slate-500 hover:text-white text-xl font-bold">✕</button>
                             </div>
 
-                            <div>
-                                <label className="text-xs text-slate-400 uppercase tracking-wider font-bold block mb-3">UI Scale: <span className="text-white">{Math.round(settings.uiScale * 100)}%</span></label>
-                                <input type="range" min="0.5" max="1.5" step="0.05" value={settings.uiScale} onChange={(e) => setSettings(p => ({ ...p, uiScale: parseFloat(e.target.value) }))} className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-500" />
-                                <div className="flex justify-between mt-2">
-                                    <span className="text-[10px] text-slate-500 font-bold">Small</span>
-                                    <span className="text-[10px] text-slate-500 font-bold">Large</span>
+                            <div className="flex flex-col gap-6">
+                                <div>
+                                    <label className="text-xs text-slate-400 uppercase tracking-wider font-bold block mb-3">Master Volume: <span className="text-white">{Math.round(settings.volume * 100)}%</span></label>
+                                    <input type="range" min="0" max="1" step="0.1" value={settings.volume} onChange={(e) => setSettings(p => ({ ...p, volume: parseFloat(e.target.value) }))} className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-500" />
                                 </div>
-                            </div>
 
-                            <div className="flex items-center justify-between bg-slate-800/50 p-4 rounded-xl border border-slate-700">
-                                <label className="text-sm font-bold text-slate-300">Touch Mode</label>
-                                <button onClick={() => setSettings(p => ({ ...p, isMobile: !p.isMobile }))} className={`w-12 h-6 rounded-full transition-colors relative ${settings.isMobile ? 'bg-emerald-500' : 'bg-slate-600'}`}>
-                                    <div className={`w-4 h-4 rounded-full bg-white absolute top-1 transition-transform ${settings.isMobile ? 'translate-x-7' : 'translate-x-1'}`}></div>
-                                </button>
-                            </div>
-
-                            {settings.isMobile && (
-                                <div className="bg-slate-800/30 p-4 rounded-xl border border-slate-700">
-                                    <label className="text-xs text-slate-400 uppercase tracking-wider font-bold block mb-3">Joystick Scale: <span className="text-white">{Math.round(settings.joystickScale * 100)}%</span></label>
-                                    <input type="range" min="0.5" max="2" step="0.1" value={settings.joystickScale} onChange={(e) => setSettings(p => ({ ...p, joystickScale: parseFloat(e.target.value) }))} className="w-full accent-cyan-500" />
+                                <div>
+                                    <label className="text-xs text-slate-400 uppercase tracking-wider font-bold block mb-3">UI Scale: <span className="text-white">{Math.round(settings.uiScale * 100)}%</span></label>
+                                    <input type="range" min="0.5" max="1.5" step="0.05" value={settings.uiScale} onChange={(e) => setSettings(p => ({ ...p, uiScale: parseFloat(e.target.value) }))} className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-500" />
+                                    <div className="flex justify-between mt-2">
+                                        <span className="text-[10px] text-slate-500 font-bold">Small</span>
+                                        <span className="text-[10px] text-slate-500 font-bold">Large</span>
+                                    </div>
                                 </div>
-                            )}
 
-                            <div className="flex items-center justify-between bg-slate-800/50 p-4 rounded-xl border border-slate-700">
-                                <label className="text-sm font-bold text-slate-300">Show Minimap</label>
-                                <button onClick={() => setSettings(p => ({ ...p, showMinimap: !p.showMinimap }))} className={`w-12 h-6 rounded-full transition-colors relative ${settings.showMinimap ? 'bg-emerald-500' : 'bg-slate-600'}`}>
-                                    <div className={`w-4 h-4 rounded-full bg-white absolute top-1 transition-transform ${settings.showMinimap ? 'translate-x-7' : 'translate-x-1'}`}></div>
-                                </button>
-                            </div>
+                                <div className="flex items-center justify-between bg-slate-800/50 p-4 rounded-xl border border-slate-700">
+                                    <label className="text-sm font-bold text-slate-300">Touch Mode</label>
+                                    <button onClick={() => setSettings(p => ({ ...p, isMobile: !p.isMobile }))} className={`w-12 h-6 rounded-full transition-colors relative ${settings.isMobile ? 'bg-emerald-500' : 'bg-slate-600'}`}>
+                                        <div className={`w-4 h-4 rounded-full bg-white absolute top-1 transition-transform ${settings.isMobile ? 'translate-x-7' : 'translate-x-1'}`}></div>
+                                    </button>
+                                </div>
 
-                            <div className="flex items-center justify-between bg-slate-800/50 p-4 rounded-xl border border-slate-700">
-                                <label className="text-sm font-bold text-slate-300">Graphics Level</label>
-                                <select value={settings.graphics} onChange={(e) => setSettings(p => ({ ...p, graphics: e.target.value }))} className="bg-slate-900 border border-slate-600 text-white text-sm rounded-lg px-4 py-2 outline-none font-bold">
-                                    <option value="high">High (Soft Shadows + FX)</option>
-                                    <option value="low">Low (Performance Boost)</option>
-                                </select>
-                            </div>
+                                {settings.isMobile && (
+                                    <div className="bg-slate-800/30 p-4 rounded-xl border border-slate-700">
+                                        <label className="text-xs text-slate-400 uppercase tracking-wider font-bold block mb-3">Joystick Scale: <span className="text-white">{Math.round(settings.joystickScale * 100)}%</span></label>
+                                        <input type="range" min="0.5" max="2" step="0.1" value={settings.joystickScale} onChange={(e) => setSettings(p => ({ ...p, joystickScale: parseFloat(e.target.value) }))} className="w-full accent-cyan-500" />
+                                    </div>
+                                )}
 
-                            <div className="flex items-center justify-between bg-slate-800/50 p-4 rounded-xl border border-slate-700">
-                                <label className="text-sm font-bold text-slate-300">Particles & Effects</label>
-                                <button onClick={() => setSettings(p => ({ ...p, particles: !p.particles }))} className={`w-12 h-6 rounded-full transition-colors relative ${settings.particles ? 'bg-emerald-500' : 'bg-slate-600'}`}>
-                                    <div className={`w-4 h-4 rounded-full bg-white absolute top-1 transition-transform ${settings.particles ? 'translate-x-7' : 'translate-x-1'}`}></div>
-                                </button>
-                            </div>
+                                <div className="flex items-center justify-between bg-slate-800/50 p-4 rounded-xl border border-slate-700">
+                                    <label className="text-sm font-bold text-slate-300">Show Minimap</label>
+                                    <button onClick={() => setSettings(p => ({ ...p, showMinimap: !p.showMinimap }))} className={`w-12 h-6 rounded-full transition-colors relative ${settings.showMinimap ? 'bg-emerald-500' : 'bg-slate-600'}`}>
+                                        <div className={`w-4 h-4 rounded-full bg-white absolute top-1 transition-transform ${settings.showMinimap ? 'translate-x-7' : 'translate-x-1'}`}></div>
+                                    </button>
+                                </div>
 
-                            <div className="bg-slate-800/40 p-4 rounded-xl border border-slate-700/50">
-                                <label className="text-xs text-slate-400 uppercase tracking-widest font-black block mb-4">UI Global Scale: <span className="text-cyan-400">{Math.round(settings.uiScale * 100)}%</span></label>
-                                <div className="flex items-center gap-4">
-                                    <button onClick={() => setSettings(p => ({ ...p, uiScale: Math.max(0.5, p.uiScale - 0.1) }))} className="w-12 h-12 md:w-14 md:h-14 bg-slate-700 hover:bg-slate-600 rounded-xl flex items-center justify-center font-black text-white shadow-lg active:scale-95 transition-all text-xl">-</button>
-                                    <input type="range" min="0.5" max="1.5" step="0.1" value={settings.uiScale} onChange={(e) => setSettings(p => ({ ...p, uiScale: parseFloat(e.target.value) }))} className="flex-1 accent-cyan-500 h-2 bg-slate-700 rounded-full appearance-none cursor-pointer" />
-                                    <button onClick={() => setSettings(p => ({ ...p, uiScale: Math.min(1.5, p.uiScale + 0.1) }))} className="w-12 h-12 md:w-14 md:h-14 bg-cyan-600 hover:bg-cyan-500 rounded-xl flex items-center justify-center font-black text-white shadow-lg active:scale-95 transition-all text-xl">+</button>
+                                <div className="flex items-center justify-between bg-slate-800/50 p-4 rounded-xl border border-slate-700">
+                                    <label className="text-sm font-bold text-slate-300">Graphics Level</label>
+                                    <select value={settings.graphics} onChange={(e) => setSettings(p => ({ ...p, graphics: e.target.value }))} className="bg-slate-900 border border-slate-600 text-white text-sm rounded-lg px-4 py-2 outline-none font-bold">
+                                        <option value="high">High (Soft Shadows + FX)</option>
+                                        <option value="low">Low (Performance Boost)</option>
+                                    </select>
+                                </div>
+
+                                <div className="flex items-center justify-between bg-slate-800/50 p-4 rounded-xl border border-slate-700">
+                                    <label className="text-sm font-bold text-slate-300">Particles & Effects</label>
+                                    <button onClick={() => setSettings(p => ({ ...p, particles: !p.particles }))} className={`w-12 h-6 rounded-full transition-colors relative ${settings.particles ? 'bg-emerald-500' : 'bg-slate-600'}`}>
+                                        <div className={`w-4 h-4 rounded-full bg-white absolute top-1 transition-transform ${settings.particles ? 'translate-x-7' : 'translate-x-1'}`}></div>
+                                    </button>
+                                </div>
+
+                                <div className="bg-slate-800/40 p-4 rounded-xl border border-slate-700/50">
+                                    <label className="text-xs text-slate-400 uppercase tracking-widest font-black block mb-4">UI Global Scale: <span className="text-cyan-400">{Math.round(settings.uiScale * 100)}%</span></label>
+                                    <div className="flex items-center gap-4">
+                                        <button onClick={() => setSettings(p => ({ ...p, uiScale: Math.max(0.5, p.uiScale - 0.1) }))} className="w-12 h-12 md:w-14 md:h-14 bg-slate-700 hover:bg-slate-600 rounded-xl flex items-center justify-center font-black text-white shadow-lg active:scale-95 transition-all text-xl">-</button>
+                                        <input type="range" min="0.5" max="1.5" step="0.1" value={settings.uiScale} onChange={(e) => setSettings(p => ({ ...p, uiScale: parseFloat(e.target.value) }))} className="flex-1 accent-cyan-500 h-2 bg-slate-700 rounded-full appearance-none cursor-pointer" />
+                                        <button onClick={() => setSettings(p => ({ ...p, uiScale: Math.min(1.5, p.uiScale + 0.1) }))} className="w-12 h-12 md:w-14 md:h-14 bg-cyan-600 hover:bg-cyan-500 rounded-xl flex items-center justify-center font-black text-white shadow-lg active:scale-95 transition-all text-xl">+</button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     </div>
-                </div>
                 </div>
             )}
 
@@ -3151,7 +3164,7 @@ export default function PixShotMega() {
                 <div className="absolute inset-0 pointer-events-none z-30 flex flex-col pt-[var(--safe-top)] pl-[var(--safe-left)] pr-[var(--safe-right)] pb-[var(--safe-bottom)]">
                     {/* KILL FEED - Centered Top on Mobile to avoid Minimap/Score overlap */}
                     <div className={`absolute flex flex-col gap-1 items-center z-30 pointer-events-none transition-all ${settings.isMobile ? 'top-4 left-1/2 -translate-x-1/2 w-48' : 'top-24 right-6 items-end'}`}
-                         style={{ transform: `scale(${settings.uiScale})`, transformOrigin: settings.isMobile ? 'top center' : 'top right' }}>
+                        style={{ transform: `scale(${settings.uiScale})`, transformOrigin: settings.isMobile ? 'top center' : 'top right' }}>
                         {killFeed.filter(k => Date.now() - k.time < 5000).map((k) => (
                             <div key={k.id} className="bg-slate-900/80 border border-slate-700 backdrop-blur-sm px-3 py-1.5 rounded-lg text-xs font-bold flex gap-2">
                                 <span className="text-blue-400 truncate max-w-[60px]">{k.killer}</span> <span className="text-slate-400 text-[8px] mt-0.5">⚔️</span> <span className="text-red-400 truncate max-w-[60px]">{k.victim}</span>
@@ -3161,7 +3174,7 @@ export default function PixShotMega() {
 
                     {/* SCORE & STATUS - Top Right */}
                     <div className="absolute top-6 right-6 flex flex-col items-end gap-3 z-40 pointer-events-none"
-                         style={{ transform: `scale(${settings.uiScale})`, transformOrigin: 'top right' }}>
+                        style={{ transform: `scale(${settings.uiScale})`, transformOrigin: 'top right' }}>
                         <div className="bg-slate-900/60 backdrop-blur-md px-3 py-1 rounded-full text-xs font-bold text-slate-300 border border-slate-700/50 flex items-center gap-2">
                             <div className={`w-2 h-2 rounded-full ${ping < 100 ? 'bg-emerald-400' : ping < 200 ? 'bg-amber-400' : 'bg-red-500'}`}></div> {ping} ms
                         </div>
@@ -3187,7 +3200,7 @@ export default function PixShotMega() {
 
                     {/* Sector & Upgrades UI Layout - Top Left */}
                     <div className={`absolute top-6 left-6 flex items-start gap-4 z-40 transition-all ${settings.isMobile ? 'flex-col-reverse' : 'flex-row'}`}
-                         style={{ transform: `scale(${settings.uiScale})`, transformOrigin: 'top left' }}>
+                        style={{ transform: `scale(${settings.uiScale})`, transformOrigin: 'top left' }}>
                         <div className="flex flex-col gap-3 pointer-events-none">
                             <div className="bg-slate-900/60 backdrop-blur-md border border-slate-700/50 rounded-2xl px-5 py-2 flex flex-col items-center gap-1 min-w-[100px]">
                                 <div className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Sector</div>
@@ -3239,7 +3252,7 @@ export default function PixShotMega() {
 
                     {/* BARS & SKILLS - Bottom Center */}
                     <div className={`absolute left-1/2 transform -translate-x-1/2 w-full max-w-xl flex flex-col items-center z-30 pointer-events-none transition-all ${settings.isMobile ? 'bottom-2 scale-[0.85]' : 'bottom-8'}`}
-                         style={{ transform: settings.isMobile ? `translateX(-50%) scale(${settings.uiScale * 0.85})` : `translateX(-50%) scale(${settings.uiScale})`, transformOrigin: 'bottom center' }}>
+                        style={{ transform: settings.isMobile ? `translateX(-50%) scale(${settings.uiScale * 0.85})` : `translateX(-50%) scale(${settings.uiScale})`, transformOrigin: 'bottom center' }}>
                         <div className="text-white font-black mb-2 text-sm md:text-lg drop-shadow-md flex items-center gap-3 bg-slate-900/50 px-4 py-1 rounded-xl border border-slate-700/50 backdrop-blur">
                             Level {uiState.level} <span className="text-emerald-400 text-xs">{uiState.level >= 150 ? '(MAX)' : ''}</span>
                             <span className="text-cyan-300 font-mono text-xs hidden md:inline">[{auth.isLoggedIn ? auth.username : globalProfile.username}]</span>
