@@ -1,6 +1,6 @@
 'use client';
 import React, { useEffect, useRef, useState } from 'react';
-import { supabase } from '@/lib/supa';
+import { supabase } from '@/lib/supa'; // Updated for build stability
 import { io, Socket } from 'socket.io-client';
 
 // === GAME CONSTANTS ===
@@ -785,7 +785,7 @@ export default function PixShotMega() {
     const logout = () => {
         setAuth({ isLoggedIn: false, username: '', uid: '', password: '' });
         localStorage.removeItem('pixshot_auth');
-        setGlobalProfile({ username: 'Guest', uid: `GUEST_${Math.floor(Math.random() * 10000)}`, coins: 0, tokens: 0, highscore: 0, totalKills: 0, matches: 0, ownedClasses: ['basic'], avatar: '' });
+        setGlobalProfile({ username: 'Guest', uid: `GUEST_${Math.floor(Math.random() * 10000)}`, coins: 0, tokens: 0, highscore: 0, totalKills: 0, matches: 0, ownedClasses: ['basic'], avatar: '', playtime: 0 });
         setUiState(p => ({ ...p, showAuth: true, showProfile: false }));
     }
 
