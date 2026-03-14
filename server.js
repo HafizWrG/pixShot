@@ -163,7 +163,8 @@ function getRoomId(socket, requestedRoomId, mode = 'battleroyale') {
     countingDown: false,
     startTime: null, // Will be set when the match officially starts
     matchDuration: is1v1 ? 180000 : 300000, // 3 minutes for PvP, 5 minutes for BR
-    createdAt: Date.now() // Track room creation time for bot fill timeout
+    createdAt: Date.now(), // Track room creation time for bot fill timeout
+    botCheckTimer: 0 // Local counter for bot fill logic
   });
 
   if (supabase) {
@@ -192,7 +193,6 @@ async function refreshGlobalLeaderboard() {
     .from('players')
     .select('username, highscore, total_kills, avatar, playtime')
     .order('highscore', { ascending: false })
-    .order('total_kills', { ascending: false })
     .limit(20);
   
   if (!error && data) {
@@ -304,7 +304,8 @@ io.on('connection', (socket) => {
       size: 20,
       alive: true,
       kills: 0,
-      isReady: false
+      isReady: false,
+      cooldown: 0
     };
     room.players.set(socket.id, pData);
 
@@ -326,12 +327,13 @@ io.on('connection', (socket) => {
       mode: room.mode,
       safeZone: room.safeZone,
       aliveCount: room.players.size,
+      maxPlayers: room.maxRoomPlayers,
       countingDown: room.countingDown,
       startTime: room.startTime
     });
 
     // Broadcast new player to others
-    socket.to(roomId).emit('br:player_joined', { pData, aliveCount: room.players.size });
+    socket.to(roomId).emit('br:player_joined', { pData, aliveCount: room.players.size, maxPlayers: room.maxRoomPlayers });
     console.log(`[BR] ${playerData.name} joined ${roomId} (${room.players.size} players)`);
 
     // Auto-cancel countdown if someone joins and is not ready
@@ -706,37 +708,86 @@ setInterval(() => {
           if (p.alive) {
             const distToCenter = Math.hypot(p.x - targetSafeZone.x, p.y - targetSafeZone.y);
 
-            // Bot AI Movement (Move towards Safe Zone center if far, or just wander slightly)
+            // Bot AI Combat & Movement
             if (p.isBot && room.started) {
-              const botSpeed = 3;
-              let angleToCenter = Math.atan2(targetSafeZone.y - p.y, targetSafeZone.x - p.x);
+              const botSpeed = 8; // Faster bots
+              let targetAngle = p.angle;
+              let nearestDist = 1200; // Increased detection range
+              let targetObj = null;
 
-              // If they are safely inside, maybe add some random walk, otherwise dive straight inwards
-              if (distToCenter < safeRadius * 0.5) {
-                angleToCenter += (Math.random() - 0.5) * 2; // Wander
+              // Targeting: Find nearest alive opponent (Player or another Bot)
+              room.players.forEach(p2 => {
+                if (p2.alive && p2.socketId !== p.socketId) {
+                  const d = Math.hypot(p2.x - p.x, p2.y - p.y);
+                  if (d < nearestDist) {
+                    nearestDist = d;
+                    targetObj = p2;
+                  }
+                }
+              });
+
+              if (targetObj) {
+                targetAngle = Math.atan2(targetObj.y - p.y, targetObj.x - p.x);
+                // Move towards target
+                const isMelee = p.class === 'melee';
+                if (nearestDist > (isMelee ? 30 : 200)) {
+                  p.vx = Math.cos(targetAngle) * botSpeed;
+                  p.vy = Math.sin(targetAngle) * botSpeed;
+                } else {
+                  p.vx = 0; p.vy = 0;
+                }
+
+                // Attack Logic
+                if (p.cooldown <= 0) {
+                  const bSpd = 18;
+                  const bDmg = p.class === 'warden' ? 20 : (p.class === 'machinegun' ? 5 : 10);
+                  const bReload = p.class === 'machinegun' ? 100 : (p.class === 'warden' ? 600 : 300);
+
+                  io.to(roomId).emit('br:bullet', {
+                    x: p.x + Math.cos(targetAngle) * 40,
+                    y: p.y + Math.sin(targetAngle) * 40,
+                    vx: Math.cos(targetAngle) * bSpd,
+                    vy: Math.sin(targetAngle) * bSpd,
+                    life: 80,
+                    maxLife: 80,
+                    damage: bDmg,
+                    type: p.class === 'warden' ? 'tex_warden' : 'basic',
+                    shooterId: p.socketId,
+                    a: targetAngle
+                  });
+                  p.cooldown = bReload;
+                }
+              } else {
+                // No target: Move towards Safe Zone center and wander
+                let angleToCenter = Math.atan2(targetSafeZone.y - p.y, targetSafeZone.x - p.x);
+                angleToCenter += (Math.random() - 0.5) * 0.5; // Wander
+                
+                p.vx = Math.cos(angleToCenter) * (botSpeed * 0.7);
+                p.vy = Math.sin(angleToCenter) * (botSpeed * 0.7);
+                targetAngle = angleToCenter;
               }
 
-              p.vx = Math.cos(angleToCenter) * botSpeed;
-              p.vy = Math.sin(angleToCenter) * botSpeed;
-              p.angle = angleToCenter;
+              if (p.cooldown > 0) p.cooldown -= 60;
+              p.angle = targetAngle;
               p.x += p.vx;
               p.y += p.vy;
+
+              // Ensure bots stay in map
+              p.x = Math.max(100, Math.min(room.mapSize - 100, p.x));
+              p.y = Math.max(100, Math.min(room.mapSize - 100, p.y));
+              
               p.hasChanged = true;
             }
 
-            // Kena Damage Badai (Storm Damage Processing)
+            // Storm Damage processing...
             if (distToCenter > safeRadius) {
-              // Kena Damage Badai per-detik (Karena ini 20 Ticks/Sec, damage dibagi 20)
-              p.hp -= (10 / 20);
+              p.hp -= (15 / (1000 / 60)); // Buffed storm damage
               p.hasChanged = true;
-
               if (p.hp <= 0 && p.alive) {
                 p.alive = false; p.hp = 0;
-                // Broadcast Mati kena badai
                 io.to(roomId).emit('br:kill_feed', { killerName: 'The Storm', victimName: p.name, aliveCount: Array.from(room.players.values()).filter(pp => pp.alive).length });
-                // Find the socket ID for the player who died to send them a specific message
                 const targetSocketId = Array.from(room.players.keys()).find(key => room.players.get(key) === p);
-                if (targetSocketId) io.to(targetSocketId).emit('br:you_died', { killerName: 'The Storm', kills: 0 });
+                if (targetSocketId && !p.isBot) io.to(targetSocketId).emit('br:you_died', { killerName: 'The Storm', kills: 0 });
               }
             }
           }
@@ -761,7 +812,8 @@ setInterval(() => {
             x: Math.random() * room.mapSize, y: Math.random() * room.mapSize,
             vx: 0, vy: 0, angle: 0,
             hp: 150, maxHp: 150, size: 20,
-            alive: true, kills: 0, isReady: true, isBot: true
+            alive: true, kills: 0, isReady: true, isBot: true,
+            cooldown: 0
           };
           room.players.set(botId, bData);
           io.to(roomId).emit('br:player_joined', { pData: bData, aliveCount: room.players.size });
@@ -775,23 +827,36 @@ setInterval(() => {
       }
     } // <--- CLOSE
 
-    // Send updates
-    room.players.forEach(p => {
-      if (p.hasChanged && p.alive) {
-        updates.push({ socketId: p.socketId, x: p.x, y: p.y, vx: p.vx, vy: p.vy, angle: p.angle, hp: p.hp });
-        p.hasChanged = false;
-      }
+    // Optimized spatial updates: only send data of players near other players
+    room.players.forEach((recipient, recipientSid) => {
+        const playerUpdates = [];
+        const REC_X = recipient.x, REC_Y = recipient.y;
+        const R_DIST_SQ = 2000 * 2000;
+
+        room.players.forEach(p => {
+            if (p.hasChanged && p.alive) {
+                const dx = REC_X - p.x;
+                const dy = REC_Y - p.y;
+                const distSq = dx * dx + dy * dy;
+
+                if (distSq < R_DIST_SQ || p.socketId === recipientSid || room.mode === 'pvp1v1') {
+                    playerUpdates.push({ socketId: p.socketId, x: p.x, y: p.y, vx: p.vx, vy: p.vy, angle: p.angle, hp: p.hp });
+                }
+            }
+        });
+        if (playerUpdates.length > 0) {
+            io.to(recipientSid).emit('br:batch_update', playerUpdates);
+        }
     });
 
-    if (updates.length > 0) {
-      io.to(roomId).emit('br:batch_update', updates);
-    }
+    // Reset hasChanged after all recipients processed
+    room.players.forEach(p => p.hasChanged = false);
 
     // Return positive timeLeft for combat, display countdown in Lobby using negative elapsed logic
     let displayTimeLeft = room.started ? Math.floor(timeLeft / 1000) : (room.countingDown ? Math.abs(Math.floor((room.startTime - now) / 1000)) : 15);
     io.to(roomId).emit('br:zone_update', { safeZone: room.safeZone, timeLeft: displayTimeLeft, started: room.started });
   }
-}, 50); // 20 Ticks per second
+}, 60); // Reduced tick rate slightly from 50ms to 60ms to save CPU
 
 const PORT = process.env.PORT || 3001;
 
