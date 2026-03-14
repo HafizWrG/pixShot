@@ -7,8 +7,9 @@ import { io, Socket } from 'socket.io-client';
 const WORLD_SIZE = 8000;
 const TILE_SIZE = 100;
 const MAX_SHAPES = 50;
-const MAX_PARTICLES = 20;
+const MAX_PARTICLES = 50;
 const MAX_DROPS = 40;
+const VISIBILITY_MARGIN = 200;
 
 // === PROCEDURAL TEXTURE GENERATOR ===
 const generateTexture = (type: string) => {
@@ -142,6 +143,92 @@ const CLASSES: Record<string, any> = {
     },
 };
 
+const ENTITY_HP_CACHE: Record<string, number> = {};
+ENTITIES.forEach(e => ENTITY_HP_CACHE[e.type] = e.hp);
+
+// VISIBILITY_MARGIN already declared at top
+
+
+
+const LeaderboardModal = ({ globalTop, setGlobalTop, setUiState, supabase, uiScale }: any) => {
+    useEffect(() => {
+        const fetchLeaderboard = async () => {
+            const { data, error } = await supabase.from('players').select('username, highscore, total_kills, avatar, playtime, matches').order('highscore', { ascending: false }).limit(50);
+            if (!error && data) setGlobalTop(data);
+        };
+        fetchLeaderboard();
+    }, []);
+
+    return (
+        <div className="origin-center transition-all duration-500 w-full flex items-center justify-center p-4" style={{ transform: `scale(${uiScale})` }}>
+            <div className="bg-slate-900/90 p-1 md:p-8 rounded-[2.5rem] border border-amber-500/30 w-full max-w-2xl shadow-[0_0_100px_rgba(245,158,11,0.1)] flex flex-col gap-6 max-h-[85vh] overflow-hidden backdrop-blur-2xl pointer-events-auto">
+                <div className="flex justify-between items-center bg-gradient-to-r from-amber-500/10 to-transparent p-6 rounded-t-[2rem] shrink-0">
+                    <div className="flex flex-col">
+                        <h2 className="text-2xl md:text-4xl font-black text-amber-400 tracking-tighter uppercase flex items-center gap-3 italic">
+                            <span className="text-3xl">🏆</span> Hall of Fame
+                        </h2>
+                        <span className="text-[10px] font-black text-amber-500/60 uppercase tracking-[0.3em] mt-1">Top 50 Legends Globally</span>
+                    </div>
+                    <div className="flex items-center gap-4">
+                        <button onClick={async () => {
+                            setGlobalTop(null);
+                            const { data, error } = await supabase.from('players').select('username, highscore, total_kills, avatar, playtime, matches').order('highscore', { ascending: false }).limit(50);
+                            if (!error && data) setGlobalTop(data);
+                        }} className="bg-amber-500 hover:bg-amber-400 text-slate-950 px-5 py-2 rounded-full font-black text-xs uppercase transition-all active:scale-90 shadow-[0_0_20px_rgba(245,158,11,0.3)]">Refresh</button>
+                        <button onClick={() => setUiState((p: any) => ({ ...p, showLeaderboard: false }))} className="text-slate-400 hover:text-white bg-slate-800 w-10 h-10 rounded-full flex items-center justify-center border border-slate-700 transition-colors">✕</button>
+                    </div>
+                </div>
+                
+                <div className="px-6 flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-3 pb-8">
+                    {globalTop === null ? (
+                        <div className="text-center text-slate-500 py-16 flex flex-col items-center gap-4">
+                            <div className="w-16 h-16 border-4 border-amber-500/10 border-t-amber-500 rounded-full animate-spin"></div>
+                            <span className="font-black uppercase tracking-[0.2em] text-xs animate-pulse text-amber-500/50">Fetching Legends...</span>
+                        </div>
+                    ) : globalTop.length > 0 ? (
+                        <div className="flex flex-col gap-3">
+                            {globalTop.map((lb: any, i: number) => (
+                                <div key={i} className={`flex justify-between items-center p-4 rounded-3xl border transition-all group relative overflow-hidden ${i === 0 ? 'bg-amber-500/10 border-amber-500/30' : i === 1 ? 'bg-slate-300/5 border-slate-300/20' : i === 2 ? 'bg-amber-700/10 border-amber-700/20' : 'bg-slate-800/40 border-slate-800/60'}`}>
+                                    {i < 3 && <div className={`absolute top-0 right-0 w-16 h-16 opacity-10 pointer-events-none transform translate-x-4 -translate-y-4 font-black text-6xl italic ${i === 0 ? 'text-amber-400' : 'text-slate-400'}`}>{i + 1}</div>}
+                                    
+                                    <div className="flex items-center gap-4 relative z-10">
+                                        <div className="relative">
+                                            <div className={`w-14 h-14 rounded-2xl rotate-3 flex items-center justify-center font-black italic text-xl ${i === 0 ? 'bg-amber-500 text-slate-950' : i === 1 ? 'bg-slate-300 text-slate-900' : i === 2 ? 'bg-amber-700 text-amber-50' : 'bg-slate-700 text-slate-400'}`}>
+                                                {i + 1}
+                                            </div>
+                                            {i === 0 && <div className="absolute -top-2 -left-2 text-2xl animate-bounce">👑</div>}
+                                        </div>
+                                        
+                                        <div className="flex items-center gap-4">
+                                            <div className="w-12 h-12 rounded-2xl bg-slate-800 overflow-hidden border border-slate-700 group-hover:border-amber-400/50 transition-all shadow-xl">
+                                                {lb.avatar ? <img src={lb.avatar} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center bg-slate-700 font-black text-slate-500">👤</div>}
+                                            </div>
+                                            <div>
+                                                <div className="text-white font-black text-xl tracking-tight group-hover:text-amber-400 transition-colors uppercase italic">{lb.username}</div>
+                                                <div className="flex gap-2 items-center mt-1">
+                                                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{lb.matches} Matches</span>
+                                                    <span className="w-1 h-1 rounded-full bg-slate-700"></span>
+                                                    <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest">{lb.total_kills} Kills</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="text-right relative z-10">
+                                        <div className="text-amber-400 font-black text-2xl font-mono tabular-nums drop-shadow-[0_0_10px_rgba(245,158,11,0.4)]">{Math.floor(lb.highscore).toLocaleString()}</div>
+                                        <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Global Score</div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="text-center py-20 text-slate-500 italic font-bold">No legends recorded yet. Time to make history?</div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
 
 export default function PixShotMega() {
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -160,6 +247,7 @@ export default function PixShotMega() {
     const [party, setParty] = useState<{ uid: string, name: string, isLeader?: boolean, isReady?: boolean, avatar?: string }[]>([]);
     const [addFriendInput, setAddFriendInput] = useState('');
     const [killFeed, setKillFeed] = useState<{ id: number, killer: string, victim: string, time: number }[]>([]);
+    const [killNotify, setKillNotify] = useState<{ killer: string, victim: string, time: number } | null>(null);
     const [leaderboard, setLeaderboard] = useState<any[]>([]);
     const [globalTop, setGlobalTop] = useState<any[] | null>(null);
     const [onlineCount, setOnlineCount] = useState(1);
@@ -236,7 +324,7 @@ export default function PixShotMega() {
         minimizeUpgrades: false, gameMode: 'normal', biome: 'plains',
         skillCooldowns: [0, 0, 0, 0, 0], hp: 100, maxHp: 100,
         gameStats: { kills: 0, maxCombo: 0, timeSurvived: 0 },
-        brAlive: 0, brTimeLeft: 300, brStarted: false, victory: false, triggerBR: false,
+        brAlive: 0, brMaxPlayers: 30, brTimeLeft: 300, brStarted: false, victory: false, triggerBR: false,
         showServerBrowser: false, brCountdownMsg: 'Waiting for players to be ready.', isPlayerReady: false, targetRoomId: null as string | null,
         lobbyPlayers: [] as { name: string, isReady: boolean, uid: string }[],
         showServerSettings: false
@@ -277,7 +365,8 @@ export default function PixShotMega() {
         weather: { type: 'clear', timer: 0, flash: 0 },
         gameMode: 'normal', combo: { count: 0, timer: 0, max: 0 },
         sessionStart: 0, kills: 0,
-        isGameOver: false
+        isGameOver: false,
+        cachedWeights: null as any, cachedPrimaryBiome: null as any
     });
 
     useEffect(() => {
@@ -428,8 +517,11 @@ export default function PixShotMega() {
             if (auth.isLoggedIn && socketRef.current?.connected) {
                 socketRef.current.emit('player:status', { uid: auth.uid, status: 'Online' });
             }
-            loadAllPlayers();
-        }, 15000);
+            // Optimization: Only refresh all players if friends menu or leaderboard is open
+            if (uiStateRef.current.showFriends || uiStateRef.current.showLeaderboard) {
+                loadAllPlayers();
+            }
+        }, 30000); // Increased interval to 30s to reduce lag
         return () => clearInterval(interval);
     }, [auth.isLoggedIn, auth.uid]);
 
@@ -529,6 +621,7 @@ export default function PixShotMega() {
             setUiState(p => ({
                 ...p,
                 brAlive: data.aliveCount,
+                brMaxPlayers: data.maxPlayers || 30,
                 isPlayerReady: false,
                 brCountdownMsg: data.countingDown ? 'Starting in 10s...' : (data.aliveCount < 2 ? 'Waiting for players... (Min 2)' : 'Waiting for players to be ready.'),
                 lobbyPlayers: allLobbyPlayers
@@ -539,6 +632,7 @@ export default function PixShotMega() {
             setUiState(p => ({
                 ...p,
                 brAlive: data.aliveCount,
+                brMaxPlayers: data.maxPlayers || 30,
                 lobbyPlayers: [...p.lobbyPlayers, { name: data.pData.name, isReady: data.pData.isReady, uid: data.pData.uid }]
             }));
             addToast(`${data.pData.name} joined the room`, 'info');
@@ -635,7 +729,9 @@ export default function PixShotMega() {
         });
         socketRef.current.on('br:you_died', (data: any) => {
             gameRef.current.player.hp = 0;
-            setKillFeed(prev => [...prev, { id: Date.now(), killer: data.killerName, victim: 'You', time: Date.now() }]);
+            const kData = { id: Date.now(), killer: data.killerName, victim: 'You', time: Date.now() };
+            setKillFeed(prev => [...prev, kData]);
+            setKillNotify({ killer: data.killerName, victim: 'You', time: Date.now() });
             processGameOver();
         });
         socketRef.current.on('br:winner', (data: any) => {
@@ -645,7 +741,9 @@ export default function PixShotMega() {
             }
         });
         socketRef.current.on('br:kill_feed', (data: any) => {
-            setKillFeed(prev => [...prev, { id: Math.random(), killer: data.killerName, victim: data.victimName, time: Date.now() }]);
+            const kData = { id: Math.random(), killer: data.killerName, victim: data.victimName, time: Date.now() };
+            setKillFeed(prev => [...prev, kData]);
+            setKillNotify({ killer: data.killerName, victim: data.victimName, time: Date.now() });
             setUiState(p => ({ ...p, brAlive: data.aliveCount }));
         });
 
@@ -983,7 +1081,8 @@ export default function PixShotMega() {
             weather: { type: 'clear', timer: 1000, flash: 0 },
             gameMode: mode, combo: { count: 0, timer: 0, max: 0 },
             sessionStart: Date.now(), kills: 0,
-            isGameOver: false, hasSynced: false
+            isGameOver: false, hasSynced: false,
+            cachedWeights: null, cachedPrimaryBiome: null
         };
 
         const state = gameRef.current;
@@ -995,7 +1094,8 @@ export default function PixShotMega() {
                 x: Math.random() * currentWS,
                 y: Math.random() * currentWS,
                 r: type === 'house' ? 60 : 25,
-                h: type === 'house' ? 80 : 60
+                h: type === 'house' ? 80 : 60,
+                maxHp: 1000 // Just in case
             });
         }
 
@@ -1007,7 +1107,7 @@ export default function PixShotMega() {
         }
 
         syncUI();
-        setUiState(prev => ({ ...prev, isPlaying: true, isPaused: false, isGameOver: false, victory: false, showShop: false, showSettings: false, showProfile: false, showLeaderboard: false, showFriends: false, minimizeUpgrades: false, gameMode: mode, brAlive: isBR && prev.brAlive === 0 ? 30 : prev.brAlive }));
+        setUiState(prev => ({ ...prev, isPlaying: true, isPaused: false, isGameOver: false, victory: false, showShop: false, showSettings: false, showProfile: false, showLeaderboard: false, showFriends: false, showServerBrowser: false, minimizeUpgrades: false, gameMode: mode, brAlive: isBR && prev.brAlive === 0 ? 30 : prev.brAlive }));
     };
 
     const getBiomeWeights = (x: number, y: number) => {
@@ -1046,20 +1146,27 @@ export default function PixShotMega() {
         gameRef.current.aoeClouds.push({ x: ex, y: ey, r: radius, life: 15, type: 'explosion' });
         const state = gameRef.current;
 
+        const radSq = radius * radius;
         state.shapes.forEach(s => {
-            if (Math.hypot(s.x - ex, s.y - ey) < radius) {
+            const dx = s.x - ex;
+            const dy = s.y - ey;
+            if (dx * dx + dy * dy < radSq) {
                 s.hp -= dmg; state.damageTexts.push({ x: s.x, y: s.y, text: Math.floor(dmg), life: 30 });
             }
         });
         state.brPlayers.forEach(p => {
-            if (Math.hypot(p.x - ex, p.y - ey) < radius) {
+            const dx = p.x - ex;
+            const dy = p.y - ey;
+            if (dx * dx + dy * dy < radSq) {
                 state.damageTexts.push({ x: p.x, y: p.y, text: Math.floor(dmg), life: 30 });
                 if (socketRef.current && (state.gameMode === 'battleroyale' || state.gameMode === 'pvp1v1')) {
                     socketRef.current.emit('br:hit', { targetSocketId: p.socketId, damage: dmg, isExplosion: true });
                 }
             }
         });
-        if (state.gameMode !== 'god' && Math.hypot(state.player.x - ex, state.player.y - ey) < radius) {
+        const dxP = state.player.x - ex;
+        const dyP = state.player.y - ey;
+        if (state.gameMode !== 'god' && dxP * dxP + dyP * dyP < radSq) {
             if (state.player.activeBuffs.shield <= 0) state.player.hp -= dmg;
             state.damageTexts.push({ x: state.player.x, y: state.player.y, text: Math.floor(dmg), life: 30, isPlayer: true });
         }
@@ -1076,11 +1183,19 @@ export default function PixShotMega() {
         }));
     };
 
-    const handleUpgradeStat = (sName: string) => {
-        if (gameRef.current.statPoints > 0 && gameRef.current.statLevels[sName] < 8) {
-            gameRef.current.statPoints--; gameRef.current.statLevels[sName]++;
-            if (sName === 'maxHp') gameRef.current.player.maxHp += 20;
+    const upgradeStat = (statId: string) => {
+        if (gameRef.current.statPoints > 0 && (gameRef.current.statLevels[statId] || 0) < 10) {
+            gameRef.current.statLevels[statId] = (gameRef.current.statLevels[statId] || 0) + 1;
+            gameRef.current.statPoints--;
+            
+            if (statId === 'maxHp') {
+                const oldMax = gameRef.current.player.maxHp;
+                gameRef.current.player.maxHp = 100 + (gameRef.current.statLevels.maxHp * 20);
+                gameRef.current.player.hp += (gameRef.current.player.maxHp - oldMax);
+            }
+            
             syncUI();
+            playSound('levelup');
         }
     };
 
@@ -1340,7 +1455,9 @@ export default function PixShotMega() {
 
                     // Notice: other players locations are automatically updated by socket!
                     // However, calculate damage from zone for self
-                    if (Math.hypot(state.player.x - state.safeZone.x, state.player.y - state.safeZone.y) > state.safeZone.radius) {
+                    const dxZ = state.player.x - state.safeZone.x;
+                    const dyZ = state.player.y - state.safeZone.y;
+                    if (dxZ * dxZ + dyZ * dyZ > state.safeZone.radius * state.safeZone.radius) {
                         if (frameCount % 30 === 0) { state.player.hp -= 5; playSound('hit'); }
                     }
 
@@ -1395,8 +1512,13 @@ export default function PixShotMega() {
                     if (state.combo.timer <= 0) state.combo.count = 0;
                 }
 
-                const weights = getBiomeWeights(state.player.x, state.player.y);
-                const primaryBiome = getPrimaryBiome(weights);
+                // Optimization: Cache biome weights
+                if (frameCount % 30 === 0 || !state.cachedWeights) {
+                    state.cachedWeights = getBiomeWeights(state.player.x, state.player.y);
+                    state.cachedPrimaryBiome = getPrimaryBiome(state.cachedWeights);
+                }
+                const weights = state.cachedWeights;
+                const primaryBiome = state.cachedPrimaryBiome;
                 let friction = 0.85;
                 if (primaryBiome === 'ice') friction = 0.98;
                 if (primaryBiome === 'ocean') friction = 0.70;
@@ -1487,9 +1609,16 @@ export default function PixShotMega() {
                                 state.bullets.push({ x: state.player.x, y: state.player.y, vx: 0, vy: 0, life: skillDef.dur, maxLife: skillDef.dur, damage: 1, penetration: 999, type: 'blackhole' });
                             }
                         } else if (skillDef.type === 'aoe') {
-                            spawnExplosion(state.mouse.worldX || state.player.x, state.mouse.worldY || state.player.y, skillDef.dmg || 500, skillDef.rad || 300);
+                            const spawnX = state.mouse.worldX || state.player.x;
+                            const spawnY = state.mouse.worldY || state.player.y;
+                            spawnExplosion(spawnX, spawnY, skillDef.dmg || 500, skillDef.rad || 300);
                             if (skillDef.effect === 'stun') {
-                                state.shapes.forEach(s => { if (Math.hypot(s.x - state.player.x, s.y - state.player.y) < skillDef.rad) s.cooldown = 150; });
+                                const radSq = skillDef.rad * skillDef.rad;
+                                state.shapes.forEach(s => {
+                                    const dxS = s.x - state.player.x;
+                                    const dyS = s.y - state.player.y;
+                                    if (dxS * dxS + dyS * dyS < radSq) s.cooldown = 150;
+                                });
                             }
                         } else if (skillDef.type === 'aoe_delayed') {
                             setTimeout(() => {
@@ -1498,13 +1627,17 @@ export default function PixShotMega() {
                         } else if (skillDef.type === 'aoe_cloud') {
                             state.aoeClouds.push({ x: state.player.x, y: state.player.y, r: skillDef.rad, life: skillDef.dur, type: 'explosion' });
                         } else if (skillDef.type === 'aoe_leech') {
+                            const radSq = skillDef.rad * skillDef.rad;
                             state.shapes.forEach(s => {
-                                if (Math.hypot(s.x - state.player.x, s.y - state.player.y) < skillDef.rad) {
+                                const dxL = s.x - state.player.x;
+                                const dyL = s.y - state.player.y;
+                                if (dxL * dxL + dyL * dyL < radSq) {
                                     s.hp -= 200; state.player.hp = Math.min(state.player.maxHp, state.player.hp + 50);
                                     spawnParticles(s.x, s.y, 10, 'heal', 5);
                                 }
                             });
-                        } else if (skillDef.type === 'summon') {
+                        }
+ else if (skillDef.type === 'summon') {
                             if (skillDef.summonType === 'drone') {
                                 for (let j = 0; j < skillDef.count; j++) state.drones.push({ x: state.player.x + (Math.random() - 0.5) * 200, y: state.player.y + (Math.random() - 0.5) * 200, hp: 150, maxHp: 150, type: 'diamond', angle: 0 });
                                 spawnParticles(state.player.x, state.player.y, 0, 'diamond', 50);
@@ -1557,8 +1690,14 @@ export default function PixShotMega() {
 
                 state.env.forEach(e => {
                     if (e.type === 'house' || e.type === 'tree') {
-                        if (nextX > e.x - e.r && nextX < e.x + e.r && state.player.y > e.y - e.r && state.player.y < e.y + e.r) { nextX = state.player.x; state.player.vx *= 0.5; }
-                        if (state.player.x > e.x - e.r && state.player.x < e.x + e.r && nextY > e.y - e.r && nextY < e.y + e.r) { nextY = state.player.y; state.player.vy *= 0.5; }
+                        const dx = nextX - e.x;
+                        const dy = nextY - e.y;
+                        const distSq = dx * dx + dy * dy;
+                        const combinedR = e.r + state.player.size;
+                        if (distSq < combinedR * combinedR) {
+                           if (nextX > e.x - e.r && nextX < e.x + e.r && state.player.y > e.y - e.r && state.player.y < e.y + e.r) { nextX = state.player.x; state.player.vx *= 0.5; }
+                           if (state.player.x > e.x - e.r && state.player.x < e.x + e.r && nextY > e.y - e.r && nextY < e.y + e.r) { nextY = state.player.y; state.player.vy *= 0.5; }
+                        }
                     }
                 });
 
@@ -1602,11 +1741,18 @@ export default function PixShotMega() {
                         let hitDist = d.isGiant ? s.size + 40 : s.size + 15;
                         if (s.isBot && Math.hypot(s.x - d.x, s.y - d.y) < hitDist) {
                             s.hp -= isFrenzy ? calcBDmg * 1.5 : calcBDmg * 0.5; d.hp -= 5;
-                            if (frameCount % 5 === 0) spawnParticles(d.x, d.y, 5, d.type, 1);
+                            if (frameCount % 10 === 0) spawnParticles(d.x, d.y, 2, d.type, 1);
                         }
                     });
-                    if (d.hp <= 0) { state.drones.splice(index, 1); spawnParticles(d.x, d.y, 5, d.type, 10); }
+                    if (d.hp <= 0) { 
+                        state.drones.splice(index, 1); 
+                        spawnParticles(d.x, d.y, 5, d.type, 10); 
+                    }
                 });
+
+                // Optimization: Replace Math.hypot with squared distance for tight loops
+                const pX = state.player.x, pY = state.player.y;
+                const pSize = state.player.size;
 
                 // COIN DROPS UPDATE
                 for (let i = state.drops.length - 1; i >= 0; i--) {
@@ -1615,7 +1761,8 @@ export default function PixShotMega() {
                     if (d.z <= 0) { d.z = 0; d.vz *= -0.5; d.vx *= 0.8; d.vy *= 0.8; }
                     d.life--;
 
-                    if (Math.hypot(state.player.x - d.x, state.player.y - d.y) < state.player.size + 15) {
+                    const dx = pX - d.x, dy = pY - d.y;
+                    if (dx * dx + dy * dy < (pSize + 15) * (pSize + 15)) {
                         playSound('coin');
                         state.sessionCoins++;
                         state.score += 5;
@@ -1663,17 +1810,26 @@ export default function PixShotMega() {
 
                     if (!b.isEnemy && (state.gameMode === 'battleroyale' || state.gameMode === 'pvp1v1')) {
                         state.brPlayers.forEach(p => {
-                            if (p.hp > 0 && Math.hypot(p.x - b.x, p.y - b.y) < (p.size || 20) + 10) {
-                                socketRef.current?.emit('br:hit', { targetSocketId: p.socketId, damage: b.damage });
-                                b.penetration--;
-                                spawnParticles(p.x, p.y, 10, 'blood', 3);
+                            if (p.hp > 0) {
+                                const dx = p.x - b.x, dy = p.y - b.y;
+                                const distSq = dx * dx + dy * dy;
+                                const combinedR = (p.size || 20) + 10;
+                                if (distSq < combinedR * combinedR) {
+                                    socketRef.current?.emit('br:hit', { targetSocketId: p.socketId, damage: b.damage });
+                                    b.penetration--;
+                                    spawnParticles(p.x, p.y, 10, 'blood', 3);
+                                }
                             }
                         });
                     }
 
                     if (b.type === 'homing') {
-                        let nearestDist = 1000, nearestObj = null;
-                        state.shapes.forEach(s => { let d = Math.hypot(s.x - b.x, s.y - b.y); if (d < nearestDist) { nearestDist = d; nearestObj = s; } });
+                        let nearestDistSq = 1000 * 1000, nearestObj = null;
+                        state.shapes.forEach(s => { 
+                            const dx = s.x - b.x, dy = s.y - b.y;
+                            const dSq = dx * dx + dy * dy;
+                            if (dSq < nearestDistSq) { nearestDistSq = dSq; nearestObj = s; } 
+                        });
                         if (nearestObj) {
                             let a2t = Math.atan2((nearestObj as any).y - b.y, (nearestObj as any).x - b.x);
                             b.vx += Math.cos(a2t) * 0.5; b.vy += Math.sin(a2t) * 0.5;
@@ -1682,8 +1838,12 @@ export default function PixShotMega() {
                     }
                     if (b.type === 'blackhole') {
                         state.shapes.forEach(s => {
-                            let d = Math.hypot(s.x - b.x, s.y - b.y);
-                            if (d < 300) { let a2b = Math.atan2(b.y - s.y, b.x - s.x); s.x += Math.cos(a2b) * 3; s.y += Math.sin(a2b) * 3; }
+                            const dx = b.x - s.x, dy = b.y - s.y;
+                            const dSq = dx * dx + dy * dy;
+                            if (dSq < 300 * 300) { 
+                                let a2b = Math.atan2(dy, dx); 
+                                s.x += Math.cos(a2b) * 3; s.y += Math.sin(a2b) * 3; 
+                            }
                         });
                     }
 
@@ -1691,21 +1851,33 @@ export default function PixShotMega() {
 
                     if (b.type === 'warden_sonic_wave') {
                         state.env.forEach((e: any, eIdx: number) => {
-                            if (Math.hypot(e.x - b.x, e.y - b.y) < e.r + 20) {
+                            const dx = e.x - b.x, dy = e.y - b.y;
+                            const combinedR = e.r + 20;
+                            if (dx * dx + dy * dy < combinedR * combinedR) {
                                 state.env.splice(eIdx, 1); spawnParticles(e.x, e.y, 10, 'stone', 10);
                             }
                         });
                     } else if (b.type !== 'tex_warden' && b.type !== 'saw' && b.type !== 'sniper' && b.type !== 'blackhole') {
                         if (b.type === 'bounce') {
                             state.env.forEach((e: any) => {
-                                if ((e.type === 'house' || e.type === 'tree') && Math.hypot(e.x - b.x, e.y - b.y) < e.r) { b.vx *= -1; b.vy *= -1; }
+                                if (e.type === 'house' || e.type === 'tree') {
+                                    const dx = e.x - b.x, dy = e.y - b.y;
+                                    if (dx * dx + dy * dy < e.r * e.r) { b.vx *= -1; b.vy *= -1; }
+                                }
                             });
                         } else {
-                            state.env.forEach((e: any) => { if ((e.type === 'house' || e.type === 'tree') && Math.hypot(e.x - b.x, e.y - b.y) < e.r) b.life = 0; });
+                            state.env.forEach((e: any) => { 
+                                if (e.type === 'house' || e.type === 'tree') {
+                                    const dx = e.x - b.x, dy = e.y - b.y;
+                                    if (dx * dx + dy * dy < e.r * e.r) b.life = 0; 
+                                }
+                            });
                         }
                     }
 
-                    if (b.isEnemy && Math.hypot(b.x - state.player.x, b.y - state.player.y) < state.player.size + 5) {
+                    const pDistX = b.x - state.player.x, pDistY = b.y - state.player.y;
+                    const combinedP = state.player.size + 5;
+                    if (b.isEnemy && pDistX * pDistX + pDistY * pDistY < combinedP * combinedP) {
                         if (state.player.activeBuffs.reflect > 0) {
                             b.isEnemy = false; b.vx *= -1; b.vy *= -1; b.a += Math.PI;
                         } else if (state.gameMode !== 'god' && state.player.activeUlt !== 'earthquake' && state.player.activeBuffs.shield <= 0) {
@@ -1736,17 +1908,21 @@ export default function PixShotMega() {
 
                 for (let i = state.shapes.length - 1; i >= 0; i--) {
                     let shape = state.shapes[i];
-                    const distToPlayer = Math.hypot(shape.x - state.player.x, shape.y - state.player.y);
-                    if (distToPlayer > 2500) { state.shapes.splice(i, 1); continue; }
+                    const dxP = shape.x - state.player.x;
+                    const dyP = shape.y - state.player.y;
+                    const distSqP = dxP * dxP + dyP * dyP;
+                    if (distSqP > 2500 * 2500) { state.shapes.splice(i, 1); continue; }
 
                     if (shape.isBot) {
-                        let target = (distToPlayer < 800) ? state.player : null;
+                        let target = (distSqP < 800 * 800) ? state.player : null;
                         if (shape.botType === 'neutral' && !shape.provoked) target = null as any;
 
-                        const dist = target ? Math.hypot(target.x - shape.x, target.y - shape.y) : 0;
-                        const a2t = target ? Math.atan2(target.y - shape.y, target.x - shape.x) : 0;
+                        const dxT = target ? target.x - shape.x : 0;
+                        const dyT = target ? target.y - shape.y : 0;
+                        const distSqT = target ? dxT * dxT + dyT * dyT : 0;
+                        const a2t = target ? Math.atan2(dyT, dxT) : 0;
 
-                        if (shape.type === 'creeper' && distToPlayer < 80 && shape.hp > 0) {
+                        if (shape.type === 'creeper' && distSqP < 80 * 80 && shape.hp > 0) {
                             spawnExplosion(shape.x, shape.y, 20, 200); shape.hp = 0;
                             state.shapes.splice(i, 1);
                             continue;
@@ -1757,10 +1933,14 @@ export default function PixShotMega() {
                                 spawnParticles(shape.x, shape.y, 10, 'ender', 20); shape.x = state.player.x + (Math.random() - 0.5) * 800; shape.y = state.player.y + (Math.random() - 0.5) * 800; spawnParticles(shape.x, shape.y, 10, 'ender', 20);
                             }
                             if (!shape.carriedBlock && Math.random() < 0.05) {
-                                let tbIdx = state.shapes.findIndex((s: any) => !s.isBot && s.type !== 'bedrock' && Math.hypot(s.x - shape.x, s.y - shape.y) < 100);
+                                let tbIdx = state.shapes.findIndex((s: any) => {
+                                    if (s.isBot || s.type === 'bedrock') return false;
+                                    const dx = s.x - shape.x, dy = s.y - shape.y;
+                                    return dx * dx + dy * dy < 100 * 100;
+                                });
                                 if (tbIdx > -1) { shape.carriedBlock = state.shapes[tbIdx].type; state.shapes.splice(tbIdx, 1); }
                             }
-                            if (shape.carriedBlock && target && dist < 400 && shape.cooldown <= 0) {
+                            if (shape.carriedBlock && target && distSqT < 400 * 400 && shape.cooldown <= 0) {
                                 fireBullet(shape.x, shape.y, a2t, 'thrown_block', 0, 1.5, 3, 1.5, 1, shape.carriedBlock);
                                 state.bullets[state.bullets.length - 1].isEnemy = true; shape.carriedBlock = null; shape.cooldown = 100;
                             }
@@ -1770,10 +1950,10 @@ export default function PixShotMega() {
                             if (shape.botType === 'melee' || shape.botType === 'neutral') {
                                 let spd = shape.type === 'zombie' ? 1.0 : 2.0; shape.vx = Math.cos(a2t) * spd; shape.vy = Math.sin(a2t) * spd;
                             } else if (shape.botType === 'ranged') {
-                                let attackRange = shape.type === 'ghast' ? 900 : 600;
-                                let stopRange = shape.type === 'ghast' ? 400 : 200;
+                                let attackRangeSq = shape.type === 'ghast' ? 900 * 900 : 600 * 600;
+                                let stopRangeSq = shape.type === 'ghast' ? 400 * 400 : 200 * 200;
 
-                                if (dist < attackRange && dist > stopRange) {
+                                if (distSqT < attackRangeSq && distSqT > stopRangeSq) {
                                     shape.vx = 0; shape.vy = 0; shape.cooldown--;
                                     if (shape.cooldown <= 0) {
                                         if (shape.type === 'ghast') {
@@ -1785,9 +1965,10 @@ export default function PixShotMega() {
                                             state.bullets[state.bullets.length - 1].isEnemy = true; shape.cooldown = 100;
                                         }
                                     }
-                                } else if (dist <= stopRange) { shape.vx = -Math.cos(a2t) * 1.5; shape.vy = -Math.sin(a2t) * 1.5; }
+                                } else if (distSqT <= stopRangeSq) { shape.vx = -Math.cos(a2t) * 1.5; shape.vy = -Math.sin(a2t) * 1.5; }
                                 else { shape.vx = Math.cos(a2t) * 1.5; shape.vy = Math.sin(a2t) * 1.5; }
-                            } else if (shape.botType === 'climber') { shape.vx = Math.cos(a2t) * 2.5; shape.vy = Math.sin(a2t) * 2.5; }
+                            }
+ else if (shape.botType === 'climber') { shape.vx = Math.cos(a2t) * 2.5; shape.vy = Math.sin(a2t) * 2.5; }
                             else if (shape.botType === 'teleporter') { shape.vx = Math.cos(a2t) * 1.5; shape.vy = Math.sin(a2t) * 1.5; }
                         } else { shape.vx = 0; shape.vy = 0; }
 
@@ -1801,8 +1982,11 @@ export default function PixShotMega() {
                     if (shape.botType !== 'climber' && shape.botType !== 'teleporter') {
                         state.env.forEach((e: any) => {
                             if (e.type === 'house' || e.type === 'tree') {
-                                if (shape.x > e.x - e.r && shape.x < e.x + e.r && shape.y - shape.vy > e.y - e.r && shape.y - shape.vy < e.y + e.r) { shape.x -= shape.vx; shape.vx *= -1; }
-                                if (shape.x - shape.vx > e.x - e.r && shape.x - shape.vx < e.x + e.r && shape.y > e.y - e.r && shape.y < e.y + e.r) { shape.y -= shape.vy; shape.vy *= -1; }
+                                const dx = shape.x - e.x, dy = shape.y - e.y;
+                                if (dx * dx + dy * dy < (e.r + shape.size) * (e.r + shape.size)) {
+                                    if (shape.x > e.x - e.r && shape.x < e.x + e.r && shape.y - shape.vy > e.y - e.r && shape.y - shape.vy < e.y + e.r) { shape.x -= shape.vx; shape.vx *= -1; }
+                                    if (shape.x - shape.vx > e.x - e.r && shape.x - shape.vx < e.x + e.r && shape.y > e.y - e.r && shape.y < e.y + e.r) { shape.y -= shape.vy; shape.vy *= -1; }
+                                }
                             }
                         });
                     }
@@ -1815,7 +1999,9 @@ export default function PixShotMega() {
                         if (b.isEnemy || b.type === 'potion' || b.type === 'bomb' || b.type === 'blackhole') continue;
 
                         let hitDist = (b.type === 'tex_warden' || b.type === 'warden_sonic_wave' || b.type === 'laser') ? shape.size + 40 : shape.size + 5;
-                        if (Math.hypot(shape.x - b.x, shape.y - b.y) < hitDist) {
+                        const dxBS = shape.x - b.x;
+                        const dyBS = shape.y - b.y;
+                        if (dxBS * dxBS + dyBS * dyBS < hitDist * hitDist) {
                             let actualDmg = b.damage;
                             if (b.type === 'warden_sonic_wave') actualDmg *= 10;
                             if (Math.random() < 0.1) { actualDmg *= 2; state.damageTexts.push({ x: shape.x, y: shape.y, text: "CRIT!", life: 40 }); }
@@ -1873,8 +2059,11 @@ export default function PixShotMega() {
                     if (shape.hp <= 0) continue;
 
                     if (shape.hp > 0) {
-                        const dist = Math.hypot(shape.x - state.player.x, shape.y - state.player.y);
-                        if (dist < shape.size + state.player.size && state.player.z > -20) {
+                        const dxPS = shape.x - state.player.x;
+                        const dyPS = shape.y - state.player.y;
+                        const distSqPS = dxPS * dxPS + dyPS * dyPS;
+                        const combinedSizePS = shape.size + state.player.size;
+                        if (distSqPS < combinedSizePS * combinedSizePS && state.player.z > -20) {
                             if (state.player.class === 'necromancer' && !shape.isBot && state.drones.length < 20) {
                                 shape.hp = 0; state.shapes.splice(i, 1);
                                 state.drones.push({ x: shape.x, y: shape.y, hp: 50, maxHp: 50, type: shape.type, angle: 0 });
@@ -1977,21 +2166,33 @@ export default function PixShotMega() {
             }
 
             state.decals.forEach((d: any) => {
-                if (Math.abs(d.x - state.camera.x) < viewW + d.r) {
+                const dx = Math.abs(d.x - state.camera.x);
+                const dy = Math.abs(d.y - state.camera.y);
+                if (dx < viewW + d.r && dy < viewH + d.r) {
                     ctx.globalAlpha = d.life / 1000; ctx.fillStyle = d.color;
-                    ctx.beginPath(); ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2); ctx.fill();
+                    ctx.fillRect(d.x - d.r, d.y - d.r, d.r * 2, d.r * 2);
                 }
             });
             ctx.globalAlpha = 1.0;
 
             state.env.forEach((e: any) => {
-                if ((e.type === 'house' || e.type === 'tree') && Math.abs(e.x - state.camera.x) < viewW + e.r) renderables.push({ type: 'env', obj: e, sortY: e.y + e.r });
+                if ((e.type === 'house' || e.type === 'tree') && Math.abs(e.x - state.camera.x) < viewW + e.r && Math.abs(e.y - state.camera.y) < viewH + e.r) renderables.push({ type: 'env', obj: e, sortY: e.y + e.r });
             });
-            state.bullets.forEach((b: any) => renderables.push({ type: 'bullet', obj: b, sortY: b.y }));
-            state.particles.forEach((p: any) => renderables.push({ type: 'particle', obj: p, sortY: p.type === 'tnt' || p.color ? p.y + 10000 : p.y }));
-            state.drops.forEach((d: any) => renderables.push({ type: 'drop', obj: d, sortY: d.y }));
-            state.powerups.forEach((p: any) => renderables.push({ type: 'powerup', obj: p, sortY: p.y }));
-            state.drones.forEach((d: any) => renderables.push({ type: 'drone', obj: d, sortY: d.y }));
+            state.bullets.forEach((b: any) => {
+                if (Math.abs(b.x - state.camera.x) < viewW + 100 && Math.abs(b.y - state.camera.y) < viewH + 100) renderables.push({ type: 'bullet', obj: b, sortY: b.y });
+            });
+            state.particles.forEach((p: any) => {
+                if (Math.abs(p.x - state.camera.x) < viewW + 100 && Math.abs(p.y - state.camera.y) < viewH + 100) renderables.push({ type: 'particle', obj: p, sortY: p.type === 'tnt' || p.color ? p.y + 10000 : p.y });
+            });
+            state.drops.forEach((d: any) => {
+                if (Math.abs(d.x - state.camera.x) < viewW + 50 && Math.abs(d.y - state.camera.y) < viewH + 50) renderables.push({ type: 'drop', obj: d, sortY: d.y });
+            });
+            state.powerups.forEach((p: any) => {
+                if (Math.abs(p.x - state.camera.x) < viewW + 100 && Math.abs(p.y - state.camera.y) < viewH + 100) renderables.push({ type: 'powerup', obj: p, sortY: p.y });
+            });
+            state.drones.forEach((d: any) => {
+                if (Math.abs(d.x - state.camera.x) < viewW + 100 && Math.abs(d.y - state.camera.y) < viewH + 100) renderables.push({ type: 'drone', obj: d, sortY: d.y });
+            });
             renderables.push({ type: 'player', obj: state.player, sortY: state.player.y });
 
             renderables.sort((a, b) => a.sortY - b.sortY);
@@ -2003,6 +2204,7 @@ export default function PixShotMega() {
                 ctx.save();
                 renderables.forEach(item => {
                     const o = item.obj;
+                    // Already filtered by viewport in renderables collection
                     if (item.type === 'env') {
                         // Shadows disabled for env objects based on new optimization
                     } else if (item.type === 'shape' || item.type === 'player' || item.type === 'drone' || item.type === 'br_player') {
@@ -2035,7 +2237,7 @@ export default function PixShotMega() {
                     drawSprite(ctx, o.x, o.y, sizeRender * 2, sizeRender * 2, o.h || 20, isEntitySprite ? o.angle : 0, o.textureId || o.type, o.colorTop, o.colorSide, o.isBot, o.z || 0, 1.0, frameCount, isEntitySprite, eAnimState, frames);
 
                     if (o.carriedBlock) drawSprite(ctx, o.x, o.y, 15, 15, 15, 0, o.carriedBlock, null, null, false, (o.z || 0) - 35);
-                    const shapeMaxHp = ENTITIES.find(s => s.type === o.type)?.hp || o.maxHp || 10;
+                    const shapeMaxHp = ENTITY_HP_CACHE[o.type] || o.maxHp || 10;
                     if (o.hp < shapeMaxHp && o.hp > 0) {
                         ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(o.x - sizeRender, o.y + sizeRender + 15 + (o.z || 0), sizeRender * 2, 4);
                         ctx.fillStyle = '#10B981'; ctx.fillRect(o.x - sizeRender, o.y + sizeRender + 15 + (o.z || 0), ((sizeRender) * 2) * (Math.max(0, o.hp) / shapeMaxHp), 4);
@@ -2212,8 +2414,8 @@ export default function PixShotMega() {
 
             if (uiState.isPlaying && !uiState.isGameOver && settings.showMinimap) {
                 const mapSize = 160 * (settings.isMobile ? 0.8 : 1.0) * settings.uiScale;
-                const mapX = canvas.width - mapSize - 24;
-                const mapY = settings.isMobile ? 24 : canvas.height - mapSize - 24;
+                const mapX = canvas.width - mapSize - 24 - (parseInt(getComputedStyle(document.documentElement).getPropertyValue('--safe-right')) || 0);
+                const mapY = (settings.isMobile ? 24 + (parseInt(getComputedStyle(document.documentElement).getPropertyValue('--safe-top')) || 0) : canvas.height - mapSize - 24 - (parseInt(getComputedStyle(document.documentElement).getPropertyValue('--safe-bottom')) || 0));
                 ctx.save();
                 ctx.beginPath(); ctx.arc(mapX + mapSize / 2, mapY + mapSize / 2, mapSize / 2, 0, Math.PI * 2);
                 ctx.fillStyle = 'rgba(15, 23, 42, 0.7)'; ctx.fill();
@@ -2260,9 +2462,12 @@ export default function PixShotMega() {
     ];
 
     return (
-        <div className="relative w-full h-full overflow-hidden bg-slate-950 select-none font-sans text-slate-100 touch-none"
+        <div className="relative w-full h-full overflow-hidden bg-slate-950 select-none font-sans text-slate-100 touch-none overscroll-none"
             style={{
-                padding: 'var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left)',
+                paddingTop: 'var(--safe-top)',
+                paddingBottom: 'var(--safe-bottom)',
+                paddingLeft: 'var(--safe-left)',
+                paddingRight: 'var(--safe-right)',
                 fontSize: `${settings.uiScale * 100}%`
             }}>
             <canvas ref={canvasRef} className="fixed inset-0 w-full h-full" style={{ cursor: 'crosshair' }} />
@@ -2294,9 +2499,10 @@ export default function PixShotMega() {
             {uiState.isPlaying && !uiState.isGameOver && (
                 <>
                     {(uiState.gameMode === 'battleroyale' || uiState.gameMode === 'pvp1v1') && !uiState.brStarted && (
-                        <div className="absolute top-12 left-1/2 -translate-x-1/2 bg-slate-900/90 border border-amber-500/30 backdrop-blur-md p-4 rounded-3xl shadow-xl z-40 text-center w-64 md:w-80 pointer-events-auto flex flex-col">
+                        <div className="absolute left-1/2 -translate-x-1/2 bg-slate-900/90 border border-amber-500/30 backdrop-blur-md p-4 rounded-3xl shadow-xl z-40 text-center w-64 md:w-80 pointer-events-auto flex flex-col"
+                            style={{ top: 'calc(var(--safe-top) + 3rem)' }}>
                             <div className="text-sm font-black text-amber-500 tracking-widest uppercase mb-1">WAITING ROOM</div>
-                            <div className="text-slate-300 font-bold text-xs mb-2">Players: <span className="text-cyan-400 font-black">{uiState.brAlive} / {uiState.gameMode === 'pvp1v1' ? 2 : 30}</span></div>
+                            <div className="text-slate-300 font-bold text-xs mb-2">Players: <span className="text-cyan-400 font-black">{uiState.brAlive} / {uiState.brMaxPlayers}</span></div>
                             <div className="text-[10px] md:text-xs font-bold text-white mb-3 animate-pulse bg-slate-800/50 rounded-lg p-1.5">{uiState.brCountdownMsg || 'Waiting for players...'}</div>
 
                             <div className="bg-slate-950/50 p-2 border border-slate-700/50 rounded-xl mb-3 text-left overflow-y-auto custom-scrollbar flex-1 max-h-32">
@@ -2319,34 +2525,6 @@ export default function PixShotMega() {
                             </button>
                         </div>
                     )}
-
-                    <div className="absolute top-4 right-4 flex flex-col items-end gap-2 pointer-events-none z-10 w-64">
-                        {(uiState.gameMode === 'battleroyale' || uiState.gameMode === 'pvp1v1') && (
-                            <div className="flex flex-col items-end gap-1 mb-2">
-                                {(uiState.brStarted) && (
-                                    <div className="font-bold text-[10px] text-cyan-400 uppercase tracking-widest bg-slate-900/60 px-2 py-1 rounded border border-slate-700 backdrop-blur-sm">
-                                        Alive: <span className="text-white">{uiState.brAlive}</span> | Conn: <span className="text-white">{uiState.lobbyPlayers ? uiState.lobbyPlayers.length : 0}</span>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                        {(uiState.gameMode === 'battleroyale' || uiState.gameMode === 'pvp1v1') && uiState.brStarted && (
-                            <div className="bg-red-500/10 border border-red-500/40 backdrop-blur-md px-4 py-3 rounded-2xl w-full flex flex-col mb-2 shadow-[0_0_20px_rgba(239,68,68,0.2)]">
-                                <div className="text-red-400 font-black tracking-widest uppercase text-xs mb-1">Safe Zone</div>
-                                <div className="text-3xl font-mono text-white font-black">{Math.floor(uiState.brTimeLeft / 60)}:{(uiState.brTimeLeft % 60).toString().padStart(2, '0')}</div>
-                                <div className="h-1 w-full bg-slate-800 mt-2 rounded-full overflow-hidden">
-                                    <div className="h-full bg-red-500 transition-all" style={{ width: `${(uiState.brTimeLeft / 300) * 100}%` }}></div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Kill Feed List */}
-                        {killFeed.filter((kf: any) => Date.now() - kf.time < 5000).map((kf: any, i: number) => (
-                            <div key={kf.id} className="bg-slate-900/60 border-l-4 border-l-emerald-500 backdrop-blur px-3 py-2 rounded text-xs font-bold text-slate-300 animate-[slideInRight_0.3s_ease-out] w-full mt-1 shadow-lg">
-                                <span className="text-emerald-400">{kf.killer}</span> <span className="opacity-70">⚔️</span> <span className="text-red-400">{kf.victim}</span>
-                            </div>
-                        ))}
-                    </div>
                 </>
             )}
 
@@ -2356,8 +2534,8 @@ export default function PixShotMega() {
                     {/* Left Joystick - Move (Always Shown) */}
                     <div className="absolute rounded-full border-2 border-white/20 bg-black/30 pointer-events-none"
                         style={{
-                            left: 120 * settings.joystickScale,
-                            bottom: 120 * settings.joystickScale,
+                            left: `calc(${120 * settings.joystickScale}px + var(--safe-left))`,
+                            bottom: `calc(${120 * settings.joystickScale}px + var(--safe-bottom))`,
                             width: 100 * settings.joystickScale,
                             height: 100 * settings.joystickScale,
                             transform: 'translate(-50%, 50%)'
@@ -2374,11 +2552,11 @@ export default function PixShotMega() {
                     {/* Right Joystick - Attack (Always Shown) */}
                     <div className="absolute rounded-full border-2 border-red-500/20 bg-black/20 pointer-events-none"
                         style={{
-                            left: window.innerWidth - (120 * settings.joystickScale),
-                            bottom: 120 * settings.joystickScale,
+                            right: `calc(${120 * settings.joystickScale}px + var(--safe-right))`,
+                            bottom: `calc(${120 * settings.joystickScale}px + var(--safe-bottom))`,
                             width: 100 * settings.joystickScale,
                             height: 100 * settings.joystickScale,
-                            transform: 'translate(-50%, 50%)'
+                            transform: 'translate(50%, 50%)'
                         }}>
                         <div className="absolute bg-red-500/50 rounded-full transition-all duration-75"
                             style={{
@@ -2389,7 +2567,13 @@ export default function PixShotMega() {
                             }}></div>
                     </div>
 
-                    <div className="absolute bottom-48 md:bottom-52 right-8 md:right-12 flex flex-col gap-4" style={{ transform: `scale(${settings.uiScale * (settings.isMobile ? 1.2 : 1.0)})`, transformOrigin: 'bottom right' }}>
+                    <div className="absolute flex flex-col gap-4" 
+                        style={{ 
+                            bottom: 'calc(var(--safe-bottom) + 12rem)', 
+                            right: 'calc(var(--safe-right) + 2rem)',
+                            transform: `scale(${settings.uiScale * (settings.isMobile ? 1.2 : 1.0)})`, 
+                            transformOrigin: 'bottom right' 
+                        }}>
                         <button className="w-20 h-20 md:w-24 md:h-24 rounded-full bg-cyan-600/50 border-2 border-cyan-400 backdrop-blur-xl text-white font-black active:bg-cyan-500 shadow-[0_0_30px_rgba(6,182,212,0.4)] pointer-events-auto flex items-center justify-center text-xs md:text-sm uppercase tracking-[0.2em] transition-transform active:scale-95"
                             onMouseDown={() => gameRef.current.keys.space = true} onMouseUp={() => gameRef.current.keys.space = false}
                             onTouchStart={(e) => { e.preventDefault(); gameRef.current.keys.space = true; }} onTouchEnd={(e) => { e.preventDefault(); gameRef.current.keys.space = false; }}>DASH</button>
@@ -2587,69 +2771,16 @@ export default function PixShotMega() {
                 </div>
             )}
 
-            {/* LEADERBOARD MENU */}
+            {/* LEADERBOARD MENU (HALL OF FAME REBUILT) */}
             {uiState.showLeaderboard && (
                 <div className="absolute inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[80] pointer-events-auto">
-                    <div className="origin-center transition-transform duration-500 w-full flex items-center justify-center p-4" style={{ transform: `scale(${settings.uiScale})` }}>
-                        <div className="bg-slate-900 p-8 rounded-3xl border border-amber-500/50 w-full max-w-lg shadow-[0_0_50px_rgba(245,158,11,0.15)] flex flex-col gap-6 max-h-[85vh] overflow-hidden">
-                            <div className="flex justify-between items-center border-b border-slate-800 pb-4 shrink-0">
-                                <h2 className="text-xl md:text-2xl font-black text-amber-400 tracking-widest uppercase flex items-center gap-3">🏆 Hall of Fame</h2>
-                                <div className="flex items-center gap-4">
-                                    <button onClick={async () => {
-                                        setGlobalTop(null);
-                                        const { data, error } = await supabase.from('players').select('username, highscore, total_kills, avatar, playtime').order('highscore', { ascending: false }).limit(20);
-                                        if (!error && data) setGlobalTop(data);
-                                    }} className="text-amber-500 hover:text-amber-400 text-xs font-black uppercase tracking-tighter bg-amber-500/10 px-3 py-1.5 rounded-lg border border-amber-500/20 active:scale-95 transition-all">Refresh</button>
-                                    <button onClick={() => setUiState(p => ({ ...p, showLeaderboard: false }))} className="text-slate-500 hover:text-white text-2xl font-bold">✕</button>
-                                </div>
-                            </div>
-                            <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-2">
-                                {globalTop === null ? (
-                                    <div className="text-center text-slate-500 py-16 flex flex-col items-center gap-4">
-                                        <div className="w-12 h-12 border-4 border-amber-500/20 border-t-amber-500 rounded-full animate-spin"></div>
-                                        <span className="font-black uppercase tracking-widest text-sm animate-pulse">Consulting Hall of Fame...</span>
-                                    </div>
-                                ) : globalTop.length > 0 ? (
-                                    <div className="flex flex-col gap-3">
-                                        {globalTop.map((lb: any, i: number) => (
-                                            <div key={i} className="flex justify-between items-center bg-slate-800/60 p-4 rounded-2xl border border-slate-700/50 hover:border-amber-500/30 hover:bg-slate-800 transition-all group">
-                                                <div className="flex items-center gap-4">
-                                                    <div className="relative">
-                                                        <span className={`font-black text-xl italic tracking-tighter ${i === 0 ? 'text-amber-400' : i === 1 ? 'text-slate-300' : i === 2 ? 'text-amber-700' : 'text-slate-600'}`}>#{i + 1}</span>
-                                                    </div>
-                                                    <div className="w-12 h-12 rounded-full bg-slate-700 overflow-hidden border-2 border-slate-600 group-hover:border-amber-400/50 transition-colors shadow-inner">
-                                                        {lb.avatar ? <img src={lb.avatar} className="w-full h-full object-cover" /> : <div className="flex items-center justify-center w-full h-full text-lg">👤</div>}
-                                                    </div>
-                                                    <div className="flex flex-col">
-                                                        <span className="text-white font-black text-base md:text-lg tracking-wide group-hover:text-amber-100 transition-colors">{lb.username}</span>
-                                                        <div className="text-[10px] text-slate-400 font-black uppercase tracking-widest flex items-center gap-3 mt-0.5">
-                                                            <span className="flex items-center gap-1.5 bg-red-500/10 text-red-400 px-2 py-0.5 rounded-full border border-red-500/20">💀 {lb.total_kills || 0} <span className="text-[8px] opacity-60">KILLS</span></span>
-                                                            <span className="flex items-center gap-1.5 bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded-full border border-blue-500/20">🕒 {Math.floor((lb.playtime || 0) / 60)}m <span className="text-[8px] opacity-60">PLAY</span></span>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                                <div className="flex flex-col items-end">
-                                                    <span className="text-amber-400 font-mono font-black text-2xl drop-shadow-[0_0_8px_rgba(245,158,11,0.3)]">{lb.highscore || lb.score || 0}</span>
-                                                    <span className="text-[9px] text-slate-500 font-black uppercase tracking-widest">Global Rank</span>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                ) : (
-                                    <div className="text-center text-slate-500 py-16 flex flex-col items-center gap-4 italic font-bold">
-                                        <div className="text-4xl opacity-20">📜</div>
-                                        <div>No legends in the Hall of Fame yet.<br /><span className="text-[10px] uppercase font-black not-italic text-slate-600 tracking-tighter">Note: Ensure your 'players' table has a Public SELECT policy in Supabase.</span></div>
-                                        <button onClick={async () => {
-                                            setGlobalTop(null);
-                                            const { data, error } = await supabase.from('players').select('username, highscore, total_kills, avatar, playtime').order('highscore', { ascending: false }).limit(20);
-                                            if (!error && data) setGlobalTop(data);
-                                            else setGlobalTop([]);
-                                        }} className="mt-4 bg-slate-800 hover:bg-slate-700 text-slate-400 px-6 py-2 rounded-xl text-xs uppercase font-black tracking-widest border border-slate-700 transition-all">Retry Fetch</button>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    </div>
+                    <LeaderboardModal 
+                        globalTop={globalTop} 
+                        setGlobalTop={setGlobalTop} 
+                        setUiState={setUiState} 
+                        supabase={supabase}
+                        uiScale={settings.uiScale}
+                    />
                 </div>
             )}
 
@@ -3159,107 +3290,149 @@ export default function PixShotMega() {
                 </div>
             )}
 
-            {/* HUD UI */}
-            {uiState.isPlaying && !uiState.isGameOver && (
-                <div className="absolute inset-0 pointer-events-none z-30 flex flex-col pt-[var(--safe-top)] pl-[var(--safe-left)] pr-[var(--safe-right)] pb-[var(--safe-bottom)]">
-                    {/* KILL FEED - Centered Top on Mobile to avoid Minimap/Score overlap */}
-                    <div className={`absolute flex flex-col gap-1 items-center z-30 pointer-events-none transition-all ${settings.isMobile ? 'top-4 left-1/2 -translate-x-1/2 w-48' : 'top-24 right-6 items-end'}`}
-                        style={{ transform: `scale(${settings.uiScale})`, transformOrigin: settings.isMobile ? 'top center' : 'top right' }}>
-                        {killFeed.filter(k => Date.now() - k.time < 5000).map((k) => (
-                            <div key={k.id} className="bg-slate-900/80 border border-slate-700 backdrop-blur-sm px-3 py-1.5 rounded-lg text-xs font-bold flex gap-2">
-                                <span className="text-blue-400 truncate max-w-[60px]">{k.killer}</span> <span className="text-slate-400 text-[8px] mt-0.5">⚔️</span> <span className="text-red-400 truncate max-w-[60px]">{k.victim}</span>
-                            </div>
-                        ))}
-                    </div>
-
-                    {/* SCORE & STATUS - Top Right */}
-                    <div className="absolute top-6 right-6 flex flex-col items-end gap-3 z-40 pointer-events-none"
-                        style={{ transform: `scale(${settings.uiScale})`, transformOrigin: 'top right' }}>
-                        <div className="bg-slate-900/60 backdrop-blur-md px-3 py-1 rounded-full text-xs font-bold text-slate-300 border border-slate-700/50 flex items-center gap-2">
-                            <div className={`w-2 h-2 rounded-full ${ping < 100 ? 'bg-emerald-400' : ping < 200 ? 'bg-amber-400' : 'bg-red-500'}`}></div> {ping} ms
-                        </div>
-
-                        {settings.isMobile && settings.showMinimap && <div className="h-32 w-1" /> /* Spacer for Minimap */}
-
-                        <div className="bg-slate-900/60 backdrop-blur-md border border-slate-700/50 rounded-2xl px-4 py-2 text-right shadow-lg flex gap-4">
-                            <div>
-                                <div className="text-slate-400 text-[8px] font-bold uppercase tracking-widest mb-0.5">Score</div>
-                                <div className="text-sm font-mono font-black text-white">{uiState.score}</div>
-                            </div>
-                            <div className="border-l border-slate-700 pl-4">
-                                <div className="text-slate-400 text-[8px] font-bold uppercase tracking-widest mb-0.5">Coins</div>
-                                <div className="text-sm font-mono font-black text-amber-400">{uiState.inGameCoins} 🪙</div>
-                            </div>
-                        </div>
-                        <div className="flex gap-2 pointer-events-auto">
-                            <button onClick={togglePause} className="bg-slate-800/80 hover:bg-slate-700 backdrop-blur-md border border-slate-600 rounded-xl text-white py-1.5 px-3 shadow-lg transition-all text-sm">
-                                ⏸️
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Sector & Upgrades UI Layout - Top Left */}
-                    <div className={`absolute top-6 left-6 flex items-start gap-4 z-40 transition-all ${settings.isMobile ? 'flex-col-reverse' : 'flex-row'}`}
-                        style={{ transform: `scale(${settings.uiScale})`, transformOrigin: 'top left' }}>
-                        <div className="flex flex-col gap-3 pointer-events-none">
-                            <div className="bg-slate-900/60 backdrop-blur-md border border-slate-700/50 rounded-2xl px-5 py-2 flex flex-col items-center gap-1 min-w-[100px]">
-                                <div className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Sector</div>
-                                <div className="text-sm font-bold text-emerald-400 uppercase tracking-wider">{uiState.biome}</div>
-                            </div>
-
-                            {(uiState.gameMode === 'battleroyale' || uiState.gameMode === 'pvp1v1') && (
-                                <div className="bg-orange-900/60 backdrop-blur-md border border-orange-500/50 rounded-2xl px-5 py-2 flex flex-col items-center gap-1 min-w-[100px]">
-                                    <div className="text-orange-300 text-[10px] font-black uppercase tracking-widest">Zone Closes</div>
-                                    <div className="text-sm font-mono font-bold text-white">{uiState.brTimeLeft}s</div>
-                                </div>
-                            )}
-
-                            {uiState.gameMode === 'god' && (
-                                <button onClick={() => setShowGodSelector(true)} className="bg-amber-950/40 backdrop-blur-md border border-amber-500/40 rounded-2xl p-2 flex items-center gap-3 shadow-[0_0_25px_rgba(245,158,11,0.2)] pointer-events-auto">
-                                    <div className="w-12 h-12 bg-amber-500/20 rounded-xl border border-amber-500/50 flex items-center justify-center shrink-0">
-                                        <img src={`/${uiState.playerClass === 'basic' ? 'biasa' : uiState.playerClass === 'warden' ? 'miaw' : uiState.playerClass === 'necromancer' ? 'necro' : 'tank_' + uiState.playerClass}.png`} className="w-8 h-8 object-contain" />
+            {/* HUD UI - TOP LEVEL OVERLAYS */}
+            {uiState.isPlaying && (
+                <div className="absolute inset-0 pointer-events-none z-40 select-none game-overlay flex flex-col p-4 md:p-6 transition-all">
+                    {/* TOP HUD GRID */}
+                    <div className="flex justify-between items-start w-full relative">
+                        
+                        {/* LEFT WING: STATUS, ACTIONS & UPGRADES */}
+                        <div className="flex flex-col gap-3 pointer-events-auto portrait-shrink" style={{ transform: `scale(${settings.uiScale})`, transformOrigin: 'top left' }}>
+                            {/* Status UI */}
+                            <div className="bg-slate-900/60 backdrop-blur-xl px-4 py-2 rounded-2xl border border-white/10 shadow-2xl flex items-center gap-3">
+                                <div className="flex flex-col">
+                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Status</span>
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                                        <span className="text-sm font-black text-white uppercase tracking-wider">{uiState.gameMode.toUpperCase()}</span>
                                     </div>
-                                    <span className="text-xs font-black text-white uppercase truncate max-w-[80px]">{CLASSES[uiState.playerClass]?.name}</span>
-                                </button>
-                            )}
-                        </div>
-
-                        {/* UPGRADES PANEL */}
-                        {(!settings.isMobile || uiState.statPoints > 0) && (
-                            <div className={`flex flex-col gap-1 ${settings.isMobile ? 'w-56' : 'w-64 md:w-72'} bg-slate-900/70 backdrop-blur-lg p-4 rounded-2xl border border-slate-700/50 shadow-2xl pointer-events-auto transition-all`}>
-                                <div className="flex justify-between items-center border-b border-slate-700/80 pb-2">
-                                    <span className="text-slate-200 font-bold text-[10px] md:text-sm uppercase tracking-widest">Upgrades {uiState.statPoints > 0 && <span className="text-amber-400 animate-pulse font-mono bg-amber-400/10 px-2 py-0.5 rounded ml-2">Pts: {uiState.statPoints}</span>}</span>
-                                    <button onClick={() => setUiState(p => ({ ...p, minimizeUpgrades: !p.minimizeUpgrades }))} className="text-slate-400 hover:text-white font-bold px-2 py-1 bg-slate-800 rounded text-xs">
-                                        {uiState.minimizeUpgrades ? '+' : '-'}
-                                    </button>
                                 </div>
-
-                                {!uiState.minimizeUpgrades && statsList.map((stat) => (
-                                    <div key={stat.id} className="flex items-center gap-3 group py-0.5 mt-0.5">
-                                        <button disabled={uiState.statPoints <= 0 || uiState.stats[stat.id] >= 8} onClick={() => handleUpgradeStat(stat.id)}
-                                            className={`w-6 h-6 rounded flex items-center justify-center font-bold text-base transition-all duration-200 ${uiState.statPoints > 0 && uiState.stats[stat.id] < 8 ? 'bg-slate-700 text-white hover:bg-white hover:text-slate-900 shadow-md cursor-pointer' : 'bg-slate-800/50 text-slate-600 cursor-not-allowed'}`}>+</button>
-                                        <div className="flex-1 text-[8px] md:text-[10px] text-slate-300 uppercase tracking-widest font-bold truncate">{stat.name}</div>
-                                        <div className="flex gap-[1px]">
-                                            {[...Array(8)].map((_, idx) => (
-                                                <div key={idx} className={`w-[6px] md:w-[10px] h-3 rounded-sm transition-all duration-300 ${idx < uiState.stats[stat.id] ? (uiState.gameMode === 'god' ? 'bg-cyan-400' : `${stat.color}`) : 'bg-slate-800 border border-slate-700'}`}></div>
-                                            ))}
+                                {(uiState.gameMode === 'battleroyale' || uiState.gameMode === 'pvp1v1') && (
+                                    <>
+                                        <div className="w-px h-8 bg-white/5"></div>
+                                        <div className="flex flex-col items-center">
+                                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Alive</span>
+                                            <span className="text-lg font-black text-white font-mono">{uiState.brAlive} / {uiState.brMaxPlayers}</span>
                                         </div>
-                                    </div>
-                                ))}
+                                    </>
+                                )}
                             </div>
-                        )}
+
+                            {/* Action Strip (Under Status) */}
+                            <div className="flex gap-2 bg-slate-900/40 backdrop-blur-md p-1.5 rounded-2xl border border-white/5 shadow-xl w-fit">
+                                <button onClick={togglePause} className="w-10 h-10 bg-slate-800 hover:bg-slate-700 text-white rounded-xl flex items-center justify-center border border-slate-700 transition-all">⏸️</button>
+                                <button onClick={() => setUiState(p => ({ ...p, showSettings: true }))} className="w-10 h-10 bg-slate-800 hover:bg-slate-700 text-white rounded-xl flex items-center justify-center border border-slate-700 transition-all">⚙️</button>
+                            </div>
+
+                            {/* God Mode: Tank Class Change */}
+                            {uiState.gameMode === 'god' && (
+                                <div className="flex gap-2 overflow-x-auto max-w-[280px] p-2 bg-slate-900/40 backdrop-blur-md rounded-2xl border border-amber-500/30 custom-scrollbar pointer-events-auto">
+                                    {Object.keys(CLASSES).map(clsId => (
+                                        <button key={clsId} onClick={() => {
+                                            if (gameRef.current.player) {
+                                                setUiState(p => ({ ...p, playerClass: clsId as any }));
+                                                gameRef.current.player.class = clsId as any;
+                                                playSound('levelup');
+                                            }
+                                        }} className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase transition-all shrink-0 ${uiState.playerClass === clsId ? 'bg-amber-500 text-slate-900 shadow-[0_0_15px_rgba(245,158,11,0.4)]' : 'bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700'}`}>
+                                            {clsId}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* Upgrade Terminal (Under Actions) */}
+                            <div className={`transition-all duration-500 portrait-shrink ${uiState.statPoints > 0 ? 'translate-y-0 opacity-100' : '-translate-y-4 opacity-0 pointer-events-none'}`}>
+                                <div className="bg-slate-900/90 backdrop-blur-2xl p-4 rounded-[2rem] border-2 border-amber-500/20 shadow-2xl w-44 md:w-52">
+                                    <div className="flex justify-between items-center mb-3">
+                                        <div className="flex flex-col">
+                                            <span className="text-[9px] font-black text-amber-500 uppercase tracking-widest">Upgrade</span>
+                                            <span className="text-lg font-black text-white font-mono">{uiState.statPoints} <span className="text-[10px]">PTS</span></span>
+                                        </div>
+                                        <div className="w-8 h-8 rounded-full bg-amber-500/20 flex items-center justify-center text-lg animate-bounce">⚡</div>
+                                    </div>
+                                    <div className="flex flex-col gap-1">
+                                        {statsList.map(stat => (
+                                            <button key={stat.id} onClick={() => upgradeStat(stat.id)}
+                                                className={`p-1.5 rounded-lg border transition-all flex flex-col gap-0.5 group relative overflow-hidden ${ (uiState.stats[stat.id] || 0) >= 10 ? 'border-amber-500/50 bg-amber-500/10 opacity-50' : 'border-white/5 bg-white/5 hover:bg-white/10 active:scale-95' }`}
+                                            >
+                                                <div className="flex justify-between items-center z-10">
+                                                    <span className="text-[8px] font-black text-slate-400 uppercase">{stat.name}</span>
+                                                    <span className="text-[9px] font-black text-white font-mono">{uiState.stats[stat.id] || 0}</span>
+                                                </div>
+                                                <div className="h-0.5 w-full bg-slate-800 rounded-full overflow-hidden">
+                                                    <div className={`h-full ${stat.color}`} style={{ width: `${(uiState.stats[stat.id] || 0) * 10}%` }}></div>
+                                                </div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* CENTER HUB: SCORE, COINS, KILLS, STREAK */}
+                        <div className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center gap-1 portrait-shrink" style={{ transform: `translateX(-50%) scale(${settings.uiScale})` }}>
+                            {/* Score & Coins */}
+                            <div className="bg-slate-950/80 backdrop-blur-2xl px-6 py-2 md:px-8 md:py-3 rounded-2xl md:rounded-3xl border border-amber-500/30 shadow-[0_0_50px_rgba(245,158,11,0.25)] flex flex-col items-center min-w-[160px] md:min-w-[200px]">
+                                <span className="text-[8px] font-black text-amber-500 uppercase tracking-[0.4em] leading-none mb-1">Terminal Master</span>
+                                <div className="flex items-baseline gap-3 md:gap-4">
+                                    <span className="text-2xl md:text-4xl font-black text-white font-mono tracking-tighter">{Math.floor(uiState.score).toLocaleString()}</span>
+                                    <div className="flex flex-col items-center">
+                                        <span className="text-[9px] font-bold text-amber-400 font-mono">🪙 {uiState.inGameCoins}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Kills & Streak Terminal */}
+                            <div className="bg-slate-900/60 backdrop-blur-md px-4 py-1 md:px-6 md:py-1.5 rounded-full border border-white/10 flex items-center gap-4 md:gap-6 shadow-xl">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Kills:</span>
+                                    <span className="text-sm font-black text-red-500 italic">{uiState.gameStats.kills}</span>
+                                </div>
+                                <div className="w-px h-3 bg-white/10"></div>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Streak:</span>
+                                    <span className="text-sm font-black text-amber-400 italic">x{uiState.gameStats.maxCombo}</span>
+                                </div>
+                            </div>
+                        </div>
+
                     </div>
 
-                    {/* BARS & SKILLS - Bottom Center */}
-                    <div className={`absolute left-1/2 transform -translate-x-1/2 w-full max-w-xl flex flex-col items-center z-30 pointer-events-none transition-all ${settings.isMobile ? 'bottom-2 scale-[0.85]' : 'bottom-8'}`}
-                        style={{ transform: settings.isMobile ? `translateX(-50%) scale(${settings.uiScale * 0.85})` : `translateX(-50%) scale(${settings.uiScale})`, transformOrigin: 'bottom center' }}>
-                        <div className="text-white font-black mb-2 text-sm md:text-lg drop-shadow-md flex items-center gap-3 bg-slate-900/50 px-4 py-1 rounded-xl border border-slate-700/50 backdrop-blur">
-                            Level {uiState.level} <span className="text-emerald-400 text-xs">{uiState.level >= 150 ? '(MAX)' : ''}</span>
-                            <span className="text-cyan-300 font-mono text-xs hidden md:inline">[{auth.isLoggedIn ? auth.username : globalProfile.username}]</span>
+                    {/* SPACE FILLER (Keep bottom areas empty for thumbs) */}
+                    <div className="flex-1"></div>
+
+                    {/* CENTRAL KILL NOTIFICATION POPUP */}
+                    {killNotify && (
+                        <div key={killNotify.time} className="fixed top-[25%] left-1/2 -translate-x-1/2 z-[100] pointer-events-none animate-in fade-in zoom-in slide-in-from-top-10 duration-500 fill-mode-forwards opacity-0"
+                            style={{ animation: 'kill-notify 3.5s ease-in-out forwards' }}>
+                            <div className="bg-slate-900/90 backdrop-blur-xl border-x-4 border-red-500 px-8 py-3 rounded-2xl shadow-[0_0_50px_rgba(239,68,68,0.3)] flex items-center gap-6">
+                                <span className="text-xl font-black text-white italic tracking-tighter">{killNotify.killer.toUpperCase()}</span>
+                                <div className="flex flex-col items-center">
+                                    <span className="text-red-500 font-extrabold text-2xl animate-pulse leading-none">ELIMINATED</span>
+                                    <div className="h-0.5 w-full bg-red-500/50 mt-1"></div>
+                                </div>
+                                <span className="text-xl font-black text-slate-400 italic tracking-tighter">{killNotify.victim.toUpperCase()}</span>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* BARS & SKILLS - Bottom Center */}
+            {uiState.isPlaying && !uiState.isGameOver && (
+                <div className={`absolute left-1/2 transform -translate-x-1/2 w-full max-w-xl flex flex-col items-center z-40 pointer-events-none transition-all portrait-center ${settings.isMobile ? 'bottom-2' : 'bottom-10'}`}
+                    style={{ transform: `translateX(-50%) scale(${settings.uiScale})`, transformOrigin: 'bottom center' }}>
+                    
+                    <div className="flex flex-col items-center w-[90%] md:w-full gap-2">
+                        <div className="text-white font-black px-4 py-1.5 rounded-full bg-slate-900/80 border border-slate-700/50 backdrop-blur-md shadow-2xl flex items-center gap-3 text-xs md:text-sm uppercase tracking-widest mb-1">
+                            <span className="text-emerald-400">LVL {uiState.level}</span>
+                            <span className="w-1 h-1 rounded-full bg-slate-600"></span>
+                            <span className="text-cyan-400">{auth.isLoggedIn ? auth.username : globalProfile.username}</span>
                         </div>
 
                         {/* SPECIAL SKILLS */}
-                        <div className="flex gap-2 md:gap-4 pointer-events-auto mb-3 bg-slate-900/30 p-2 rounded-2xl md:rounded-3xl backdrop-blur-md border border-slate-700/30 shadow-2xl">
+                        <div className="flex gap-1.5 md:gap-3 pointer-events-auto p-1.5 md:p-3 bg-slate-900/40 rounded-3xl backdrop-blur-xl border border-white/5 shadow-2xl">
                             {CLASSES[uiState.playerClass]?.skills.map((skill: any, i: number) => {
                                 const reqLvl = (i + 1) * 15;
                                 const isUnlocked = uiState.level >= reqLvl || uiState.gameMode === 'god';
@@ -3267,42 +3440,86 @@ export default function PixShotMega() {
                                 const pct = isUnlocked ? (cd > 0 ? (cd / skill.cd) * 100 : 0) : 100;
 
                                 return (
-                                    <div key={i} className={`relative w-12 h-12 md:w-20 md:h-20 rounded-xl md:rounded-2xl border-2 md:border-[3px] flex flex-col items-center justify-center overflow-hidden transition-all duration-300 select-none ${isUnlocked ? (cd <= 0 ? 'border-amber-400 bg-slate-800 shadow-[0_0_20px_rgba(245,158,11,0.5)] cursor-pointer hover:bg-slate-700 hover:-translate-y-1' : 'border-slate-700 bg-slate-900') : 'border-slate-800 bg-slate-950 opacity-40'}`}
+                                    <div key={i} className={`relative w-12 h-12 md:w-20 md:h-20 rounded-2xl border-2 flex flex-col items-center justify-center overflow-hidden transition-all duration-300 select-none ${isUnlocked ? (cd <= 0 ? 'border-amber-400 bg-slate-800 shadow-[0_0_20px_rgba(245,158,11,0.3)] cursor-pointer hover:bg-slate-700 hover:-translate-y-1' : 'border-slate-700 bg-slate-900 shadow-inner') : 'border-slate-800 bg-slate-950 opacity-40'}`}
                                         onMouseDown={() => isUnlocked && cd <= 0 && (gameRef.current.keys[(i + 1).toString()] = true)}
                                         onMouseUp={() => gameRef.current.keys[(i + 1).toString()] = false}
                                         onTouchStart={(e) => { e.preventDefault(); isUnlocked && cd <= 0 && (gameRef.current.keys[(i + 1).toString()] = true); }}
                                         onTouchEnd={(e) => { e.preventDefault(); gameRef.current.keys[(i + 1).toString()] = false; }}>
-                                        <div className="absolute bottom-0 left-0 w-full bg-slate-900/90 backdrop-blur-sm transition-all pointer-events-none" style={{ height: `${pct}%` }}></div>
-                                        <span className="relative z-10 text-[8px] md:text-xs font-black text-amber-300">[{i + 1}]</span>
-                                        <span className="relative z-10 text-[7px] md:text-[10px] font-bold text-center leading-tight uppercase px-1 text-white truncate w-full">
-                                            {isUnlocked ? skill.name : `Lvl ${reqLvl}`}
+                                        <div className="absolute bottom-0 left-0 w-full bg-cyan-500/20 backdrop-blur-sm transition-all pointer-events-none" style={{ height: `${pct}%` }}></div>
+                                        <div className="absolute top-1 left-2 text-[10px] font-black text-amber-300/50 z-10">{i + 1}</div>
+                                        <span className="relative z-10 text-[7px] md:text-[10px] font-black text-center leading-tight uppercase px-1 text-white">
+                                            {isUnlocked ? skill.name : `Lv ${reqLvl}`}
                                         </span>
                                         {cd > 0 && isUnlocked && (
-                                            <span className="absolute inset-0 flex items-center justify-center font-black text-base md:text-3xl text-red-100 z-20 pointer-events-none bg-black/40">
+                                            <div className="absolute inset-0 flex items-center justify-center font-black text-xl md:text-3xl text-white z-20 pointer-events-none bg-black/60 backdrop-blur-[2px]">
                                                 {Math.ceil(cd / 60)}
-                                            </span>
+                                            </div>
                                         )}
                                     </div>
                                 );
                             })}
                         </div>
 
-                        {/* LEVEL/XP BAR */}
-                        <div className="w-full bg-slate-950/80 backdrop-blur-sm border border-slate-700 h-5 md:h-6 rounded-full overflow-hidden relative shadow-lg p-0.5 md:p-1">
-                            <div className="absolute inset-0 flex items-center justify-center text-[8px] md:text-[10px] font-black font-mono text-white z-10">
-                                {uiState.level >= 150 ? 'MAX LEVEL REACHED' : `${uiState.xp} / ${uiState.xpNeeded} XP`}
+                        {/* STAT BARS (Combined XP & HP) */}
+                        <div className="w-full flex flex-col gap-1.5 md:gap-2">
+                            <div className="w-full h-4 md:h-6 bg-slate-950/90 border border-white/5 rounded-full overflow-hidden relative shadow-2xl p-0.5 md:p-1">
+                                <div className="absolute inset-0 flex items-center justify-center text-[8px] md:text-[10px] font-black tracking-widest text-white/80 z-10">
+                                    {uiState.level >= 150 ? 'MAXIMUM LEVEL' : `${uiState.xp} / ${uiState.xpNeeded} XP`}
+                                </div>
+                                <div className="h-full rounded-full transition-all duration-300 shadow-[0_0_15px_rgba(16,185,129,0.4)]"
+                                    style={{ width: `${uiState.level >= 150 ? 100 : (uiState.xp / uiState.xpNeeded) * 100}%`, backgroundColor: '#10b981' }}></div>
                             </div>
-                            <div className="h-full rounded-full transition-all duration-300"
-                                style={{ width: `${uiState.level >= 150 ? 100 : (uiState.xp / uiState.xpNeeded) * 100}%`, backgroundColor: uiState.gameMode === 'god' ? '#22d3ee' : '#10b981' }}></div>
+                            
+                            <div className="w-full h-5 md:h-7 bg-slate-950/90 border border-red-500/20 rounded-full overflow-hidden relative shadow-2xl p-0.5 md:p-1">
+                                <div className="absolute inset-0 flex items-center justify-center text-[9px] md:text-[11px] font-black tracking-widest text-white z-10">
+                                    {Math.max(0, Math.floor(uiState.hp))} / {uiState.maxHp} HP
+                                </div>
+                                <div className="h-full rounded-full transition-all duration-200 shadow-[0_0_20px_rgba(239,68,68,0.4)]"
+                                    style={{ width: `${Math.min(100, Math.max(0, (uiState.hp / uiState.maxHp) * 100))}%`, backgroundImage: 'linear-gradient(to right, #991b1b, #ef4444)' }}></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* DECIMATED SCREEN (DEATH UI) */}
+            {uiState.isGameOver && (
+                <div className="absolute inset-0 z-[100] bg-red-950/40 backdrop-blur-xl flex items-center justify-center p-6 pointer-events-auto">
+                    <div className="flex flex-col items-center gap-8 w-full max-w-lg transform shadow-[0_0_100px_rgba(220,38,38,0.3)] p-12 rounded-[3rem] bg-slate-900/90 border-2 border-red-500/20"
+                        style={{ transform: `scale(${settings.uiScale})` }}>
+                        <div className="relative group">
+                            <h1 className="text-7xl md:text-8xl font-black text-white italic tracking-tighter uppercase drop-shadow-2xl animate-pulse">DEATH</h1>
+                            <div className="absolute -bottom-2 inset-x-0 h-1 bg-red-600 shadow-[0_0_20px_rgba(220,38,38,1)]"></div>
                         </div>
 
-                        {/* PLAYER HEALTH BAR */}
-                        <div className="w-full mt-1 md:mt-2 bg-slate-950/90 backdrop-blur-sm border border-red-900/50 h-5 md:h-6 rounded-full overflow-hidden relative shadow-lg p-0.5 md:p-1">
-                            <div className="absolute inset-0 flex items-center justify-center text-[9px] md:text-[11px] font-black font-mono text-white z-10">
-                                {Math.max(0, Math.floor(uiState.hp))} / {uiState.maxHp} HP
+                        <div className="grid grid-cols-2 gap-4 w-full">
+                            <div className="bg-slate-800/80 p-6 rounded-3xl border border-slate-700 flex flex-col items-center gap-1">
+                                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Kills</span>
+                                <span className="text-3xl font-black text-red-500 italic">{uiState.gameStats.kills}</span>
                             </div>
-                            <div className="h-full rounded-full transition-all duration-200"
-                                style={{ width: `${Math.min(100, Math.max(0, (uiState.hp / uiState.maxHp) * 100))}%`, backgroundImage: 'linear-gradient(to right, #7f1d1d, #dc2626)' }}></div>
+                            <div className="bg-slate-800/80 p-6 rounded-3xl border border-slate-700 flex flex-col items-center gap-1">
+                                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Time</span>
+                                <span className="text-3xl font-black text-cyan-400 italic">{uiState.gameStats.timeSurvived}s</span>
+                            </div>
+                            <div className="col-span-2 bg-gradient-to-r from-amber-600/20 to-transparent p-6 rounded-3xl border border-amber-500/20 flex justify-between items-center">
+                                <div className="flex flex-col">
+                                    <span className="text-[10px] font-black text-amber-500/60 uppercase tracking-widest">Coins Earned</span>
+                                    <span className="text-3xl font-black text-amber-400 font-mono">+{Math.floor(uiState.score / 25)}</span>
+                                </div>
+                                <div className="w-12 h-12 bg-amber-500/20 rounded-full flex items-center justify-center text-2xl shadow-[0_0_20px_rgba(245,158,11,0.3)]">🪙</div>
+                            </div>
+                        </div>
+
+                        <div className="flex flex-col gap-3 w-full">
+                            {globalProfile.tokens > 0 && (
+                                <button onClick={respawnWithToken} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black py-5 rounded-2xl uppercase tracking-widest shadow-xl flex items-center justify-center gap-3 active:scale-95 transition-all text-sm border-b-4 border-emerald-800">
+                                    <span>Respawn (1 Token)</span>
+                                    <span className="bg-white/20 px-2 py-0.5 rounded text-[10px]">Stock: {globalProfile.tokens}</span>
+                                </button>
+                            )}
+                            <button onClick={exitToMainMenu} className="w-full bg-slate-100 hover:bg-white text-slate-900 font-black py-5 rounded-2xl uppercase tracking-widest shadow-xl active:scale-95 transition-all text-sm border-b-4 border-slate-400">
+                                Exit to Base
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -3313,6 +3530,30 @@ export default function PixShotMega() {
         .custom-scrollbar::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.5); border-radius: 10px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(71, 85, 105, 0.8); border-radius: 10px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 1); }
+        
+        /* Mobile Safe Area Fixes */
+        .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+        .safe-top { padding-top: env(safe-area-inset-top); }
+        .safe-left { padding-left: env(safe-area-inset-left); }
+        .safe-right { padding-right: env(safe-area-inset-right); }
+        
+        /* Apply to main UI containers if needed */
+        .game-overlay {
+            padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+        }
+
+        @media (orientation: portrait) {
+            .portrait-shrink { transform: scale(0.8) !important; }
+            .portrait-hide { display: none !important; }
+            .portrait-center { left: 50% !important; transform: translateX(-50%) scale(0.9) !important; }
+        }
+
+        @keyframes kill-notify {
+            0% { opacity: 0; transform: translate(-50%, -30px) scale(0.9); }
+            10% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+            90% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+            100% { opacity: 0; transform: translate(-50%, -15px) scale(0.95); }
+        }
       `}} />
         </div>
     );
