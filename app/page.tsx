@@ -370,6 +370,14 @@ export default function PixShotMega() {
     });
 
     useEffect(() => {
+        const ua = navigator.userAgent;
+        const isAndroid = /Android/i.test(ua);
+        const isMobile = isAndroid || /iPhone|iPad|iPod/i.test(ua);
+        if (isMobile) {
+            setSettings(p => ({ ...p, isMobile: true }));
+            gameRef.current.camera.zoom = 0.7; // Start zoomed out on mobile for better view
+        }
+        
         const savedAuth = localStorage.getItem('pixshot_auth');
         if (savedAuth) {
             const parsedAuth = JSON.parse(savedAuth);
@@ -1213,7 +1221,8 @@ export default function PixShotMega() {
 
             const touches = e.touches;
 
-            // Pinch to Zoom
+            // Pinch to Zoom - DISABLED as per user request (Only with buttons)
+            /*
             if (touches.length === 2) {
                 const dist = Math.hypot(touches[0].clientX - touches[1].clientX, touches[0].clientY - touches[1].clientY);
                 setJoystick(p => {
@@ -1225,6 +1234,7 @@ export default function PixShotMega() {
                 });
                 return;
             }
+            */
 
             let newL: any = null, newR: any = null;
             let foundLeft = false, foundRight = false;
@@ -1238,7 +1248,8 @@ export default function PixShotMega() {
                 const t = touches[i];
 
                 // Left Joystick - Move
-                if (t.clientX < window.innerWidth / 2 && (touchStateRef.current.leftTouchId === null || touchStateRef.current.leftTouchId === t.identifier) && !foundLeft) {
+                const isLeftArea = t.clientX < window.innerWidth / 2;
+                if (isLeftArea && (touchStateRef.current.leftTouchId === null || touchStateRef.current.leftTouchId === t.identifier)) {
                     touchStateRef.current.leftTouchId = t.identifier;
                     foundLeft = true;
                     let dx = t.clientX - leftJoyOriginX;
@@ -1249,15 +1260,11 @@ export default function PixShotMega() {
                     newL = { active: true, dx: dx / maxDist, dy: dy / maxDist };
                 }
                 // Right Joystick - Attack
-                else if (t.clientX >= window.innerWidth / 2 && (touchStateRef.current.rightTouchId === null || touchStateRef.current.rightTouchId === t.identifier) && !foundRight) {
+                else if (!isLeftArea && (touchStateRef.current.rightTouchId === null || touchStateRef.current.rightTouchId === t.identifier)) {
                     touchStateRef.current.rightTouchId = t.identifier;
                     foundRight = true;
                     let originX = rightJoyOriginX;
                     let originY = rightJoyOriginY;
-
-                    // Optional: Follow touch feature if far from base
-                    // let distFromBase = Math.hypot(t.clientX - originX, t.clientY - originY);
-                    // if (distFromBase > 150 * settings.joystickScale) { originX = t.clientX; originY = t.clientY; }
 
                     let dx = t.clientX - originX;
                     let dy = t.clientY - originY;
@@ -1369,8 +1376,11 @@ export default function PixShotMega() {
         }
 
         const handleWheel = (e: WheelEvent) => {
+            // Wheel Zoom - DISABLED as per user request (Only with buttons)
+            /*
             if (!uiState.isPlaying || uiState.isPaused) return;
             gameRef.current.camera.zoom = Math.min(Math.max(0.3, gameRef.current.camera.zoom - e.deltaY * 0.001), 2.5);
+            */
         };
 
         const handleKeyDown = (e: any) => {
@@ -2464,10 +2474,10 @@ export default function PixShotMega() {
     return (
         <div className="relative w-full h-full overflow-hidden bg-slate-950 select-none font-sans text-slate-100 touch-none overscroll-none"
             style={{
-                paddingTop: 'var(--safe-top)',
-                paddingBottom: 'var(--safe-bottom)',
-                paddingLeft: 'var(--safe-left)',
-                paddingRight: 'var(--safe-right)',
+                paddingTop: 'max(var(--safe-top), 10px)',
+                paddingBottom: 'max(var(--safe-bottom), 10px)',
+                paddingLeft: 'max(var(--safe-left), 10px)',
+                paddingRight: 'max(var(--safe-right), 10px)',
                 fontSize: `${settings.uiScale * 100}%`
             }}>
             <canvas ref={canvasRef} className="fixed inset-0 w-full h-full" style={{ cursor: 'crosshair' }} />
@@ -2499,11 +2509,11 @@ export default function PixShotMega() {
             {uiState.isPlaying && !uiState.isGameOver && (
                 <>
                     {(uiState.gameMode === 'battleroyale' || uiState.gameMode === 'pvp1v1') && !uiState.brStarted && (
-                        <div className="absolute left-1/2 -translate-x-1/2 bg-slate-900/90 border border-amber-500/30 backdrop-blur-md p-4 rounded-3xl shadow-xl z-40 text-center w-64 md:w-80 pointer-events-auto flex flex-col"
-                            style={{ top: 'calc(var(--safe-top) + 3rem)' }}>
-                            <div className="text-sm font-black text-amber-500 tracking-widest uppercase mb-1">WAITING ROOM</div>
-                            <div className="text-slate-300 font-bold text-xs mb-2">Players: <span className="text-cyan-400 font-black">{uiState.brAlive} / {uiState.brMaxPlayers}</span></div>
-                            <div className="text-[10px] md:text-xs font-bold text-white mb-3 animate-pulse bg-slate-800/50 rounded-lg p-1.5">{uiState.brCountdownMsg || 'Waiting for players...'}</div>
+                        <div className="absolute left-1/2 -translate-x-1/2 bg-slate-900/95 border border-amber-500/40 backdrop-blur-xl p-4 md:p-6 rounded-[2rem] shadow-[0_20px_50px_rgba(0,0,0,0.5)] z-40 text-center w-[90%] max-w-[400px] pointer-events-auto flex flex-col"
+                            style={{ top: 'max(calc(var(--safe-top) + 2rem), 40px)' }}>
+                            <div className="text-sm md:text-base font-black text-amber-500 tracking-[0.2em] uppercase mb-1">WAITING ROOM</div>
+                            <div className="text-slate-300 font-bold text-xs md:text-sm mb-2">Players: <span className="text-cyan-400 font-black">{uiState.brAlive} / {uiState.brMaxPlayers}</span></div>
+                            <div className="text-[10px] md:text-xs font-bold text-white mb-3 animate-pulse bg-slate-800/80 rounded-xl p-2">{uiState.brCountdownMsg || 'Waiting for players...'}</div>
 
                             <div className="bg-slate-950/50 p-2 border border-slate-700/50 rounded-xl mb-3 text-left overflow-y-auto custom-scrollbar flex-1 max-h-32">
                                 {uiState.lobbyPlayers.map((p: any, idx: number) => (
@@ -2612,9 +2622,9 @@ export default function PixShotMega() {
             )}
 
             {(!uiState.isPlaying || uiState.isGameOver) && !uiState.showAuth && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center z-[50] overflow-y-auto custom-scrollbar pointer-events-auto bg-slate-950/60 py-10 select-none">
-                    <div className="origin-center transition-transform duration-700 flex items-center justify-center w-full min-h-full p-4" style={{ transform: 'scale(' + settings.uiScale + ')' }}>
-                        <div className="w-full max-w-[1400px] z-[10] flex flex-col lg:flex-row gap-8 lg:gap-20 py-10 items-center justify-center min-h-[90vh]">
+                <div className="absolute inset-0 flex flex-col items-center justify-center z-[50] overflow-y-auto custom-scrollbar pointer-events-auto bg-slate-950/60 py-4 md:py-10 select-none">
+                    <div className="origin-center transition-transform duration-700 flex items-center justify-center w-full min-h-full p-2 md:p-6" style={{ transform: 'scale(' + settings.uiScale + ')' }}>
+                        <div className="w-full max-w-[1400px] z-[10] flex flex-col md:flex-row gap-6 md:gap-16 py-6 items-center justify-center min-h-[85vh]">
                             {/* LEFT PANEL: HERO SHOWCASE */}
                             <div className="flex-1 flex flex-col items-center justify-center pt-8 md:pt-0 pointer-events-none">
                                 <h1 className="text-5xl md:text-8xl font-black text-transparent bg-clip-text bg-gradient-to-b from-cyan-400 to-blue-600 tracking-tighter drop-shadow-[0_0_30px_rgba(6,182,212,0.4)] mb-2 md:mb-4 text-center z-10 uppercase w-full">PixShot.io</h1>
@@ -3141,9 +3151,9 @@ export default function PixShotMega() {
                                 <div className="bg-slate-800/40 p-4 rounded-xl border border-slate-700/50">
                                     <label className="text-xs text-slate-400 uppercase tracking-widest font-black block mb-4">UI Global Scale: <span className="text-cyan-400">{Math.round(settings.uiScale * 100)}%</span></label>
                                     <div className="flex items-center gap-4">
-                                        <button onClick={() => setSettings(p => ({ ...p, uiScale: Math.max(0.5, p.uiScale - 0.1) }))} className="w-12 h-12 md:w-14 md:h-14 bg-slate-700 hover:bg-slate-600 rounded-xl flex items-center justify-center font-black text-white shadow-lg active:scale-95 transition-all text-xl">-</button>
+                                        <button onClick={() => setSettings(p => ({ ...p, uiScale: Math.max(0.5, p.uiScale - 0.1) }))} className="w-14 h-14 md:w-16 md:h-16 bg-slate-700 hover:bg-slate-600 rounded-xl flex items-center justify-center font-black text-white shadow-lg active:scale-95 transition-all text-2xl">-</button>
                                         <input type="range" min="0.5" max="1.5" step="0.1" value={settings.uiScale} onChange={(e) => setSettings(p => ({ ...p, uiScale: parseFloat(e.target.value) }))} className="flex-1 accent-cyan-500 h-2 bg-slate-700 rounded-full appearance-none cursor-pointer" />
-                                        <button onClick={() => setSettings(p => ({ ...p, uiScale: Math.min(1.5, p.uiScale + 0.1) }))} className="w-12 h-12 md:w-14 md:h-14 bg-cyan-600 hover:bg-cyan-500 rounded-xl flex items-center justify-center font-black text-white shadow-lg active:scale-95 transition-all text-xl">+</button>
+                                        <button onClick={() => setSettings(p => ({ ...p, uiScale: Math.min(1.5, p.uiScale + 0.1) }))} className="w-14 h-14 md:w-16 md:h-16 bg-cyan-600 hover:bg-cyan-500 rounded-xl flex items-center justify-center font-black text-white shadow-lg active:scale-95 transition-all text-2xl">+</button>
                                     </div>
                                 </div>
                             </div>
@@ -3322,6 +3332,10 @@ export default function PixShotMega() {
                             <div className="flex gap-2 bg-slate-900/40 backdrop-blur-md p-1.5 rounded-2xl border border-white/5 shadow-xl w-fit">
                                 <button onClick={togglePause} className="w-10 h-10 bg-slate-800 hover:bg-slate-700 text-white rounded-xl flex items-center justify-center border border-slate-700 transition-all">⏸️</button>
                                 <button onClick={() => setUiState(p => ({ ...p, showSettings: true }))} className="w-10 h-10 bg-slate-800 hover:bg-slate-700 text-white rounded-xl flex items-center justify-center border border-slate-700 transition-all">⚙️</button>
+                                <div className="flex flex-col gap-1 ml-1">
+                                    <button onClick={() => { gameRef.current.camera.zoom = Math.min(2.5, gameRef.current.camera.zoom + 0.1); }} className="w-10 h-6 bg-slate-700 hover:bg-slate-600 text-white rounded-md flex items-center justify-center border border-slate-600 text-[12px] font-black" title="Zoom In">+</button>
+                                    <button onClick={() => { gameRef.current.camera.zoom = Math.max(0.3, gameRef.current.camera.zoom - 0.1); }} className="w-10 h-6 bg-slate-700 hover:bg-slate-600 text-white rounded-md flex items-center justify-center border border-slate-600 text-[12px] font-black" title="Zoom Out">-</button>
+                                </div>
                             </div>
 
                             {/* God Mode: Tank Class Change */}
@@ -3440,9 +3454,10 @@ export default function PixShotMega() {
                                 const pct = isUnlocked ? (cd > 0 ? (cd / skill.cd) * 100 : 0) : 100;
 
                                 return (
-                                    <div key={i} className={`relative w-12 h-12 md:w-20 md:h-20 rounded-2xl border-2 flex flex-col items-center justify-center overflow-hidden transition-all duration-300 select-none ${isUnlocked ? (cd <= 0 ? 'border-amber-400 bg-slate-800 shadow-[0_0_20px_rgba(245,158,11,0.3)] cursor-pointer hover:bg-slate-700 hover:-translate-y-1' : 'border-slate-700 bg-slate-900 shadow-inner') : 'border-slate-800 bg-slate-950 opacity-40'}`}
-                                        onMouseDown={() => isUnlocked && cd <= 0 && (gameRef.current.keys[(i + 1).toString()] = true)}
-                                        onMouseUp={() => gameRef.current.keys[(i + 1).toString()] = false}
+                                    <div key={i} className={`relative w-14 h-14 md:w-24 md:h-24 rounded-2xl border-2 flex flex-col items-center justify-center overflow-hidden transition-all duration-300 select-none ${isUnlocked ? (cd <= 0 ? 'border-amber-400 bg-slate-800 shadow-[0_0_20px_rgba(245,158,11,0.3)] cursor-pointer hover:bg-slate-700 hover:-translate-y-1' : 'border-slate-700 bg-slate-900 shadow-inner') : 'border-slate-800 bg-slate-950 opacity-40'}`}
+                                        onMouseDown={(e) => { e.preventDefault(); isUnlocked && cd <= 0 && (gameRef.current.keys[(i + 1).toString()] = true); }}
+                                        onMouseUp={(e) => { e.preventDefault(); gameRef.current.keys[(i + 1).toString()] = false; }}
+                                        onMouseLeave={() => { gameRef.current.keys[(i + 1).toString()] = false; }}
                                         onTouchStart={(e) => { e.preventDefault(); isUnlocked && cd <= 0 && (gameRef.current.keys[(i + 1).toString()] = true); }}
                                         onTouchEnd={(e) => { e.preventDefault(); gameRef.current.keys[(i + 1).toString()] = false; }}>
                                         <div className="absolute bottom-0 left-0 w-full bg-cyan-500/20 backdrop-blur-sm transition-all pointer-events-none" style={{ height: `${pct}%` }}></div>
