@@ -296,7 +296,7 @@ export default function PixShotMega() {
     const [uiState, setUiState] = useState<any>({
         isPlaying: false, isGameOver: false, isPaused: false, score: 0, inGameCoins: 0, level: 1, xp: 0, xpNeeded: 50,
         statPoints: 0, stats: { regen: 0, maxHp: 0, bodyDmg: 0, bulletSpd: 0, bulletPen: 0, bulletDmg: 0, reload: 0, moveSpd: 0 } as Record<string, number>,
-        playerClass: 'basic', dayTime: 0, showShop: false, showSettings: false, showProfile: false, showAuth: true, showLeaderboard: false, showFriends: false,
+        playerClass: 'basic', dayTime: 0, showShop: false, showSettings: false, showProfile: false, showAuth: false, showLeaderboard: false, showFriends: false,
         minimizeUpgrades: false, gameMode: 'normal', biome: 'plains',
         skillCooldowns: [0, 0, 0, 0, 0], hp: 100, maxHp: 100,
         gameStats: { kills: 0, maxCombo: 0, timeSurvived: 0 },
@@ -367,6 +367,10 @@ export default function PixShotMega() {
                 let msg = error.replace(/\+/g, ' ');
                 if (msg.includes("user email")) {
                     msg = "Facebook didn't provide an email. Ensure 'email' permission is set to 'Advanced Access' in Meta Dashboard.";
+                } else if (msg.toLowerCase().includes("internal email error")) {
+                    msg = "Supabase Auth Error: Turn 'Skip email confirmation' ON in Facebook Provider settings.";
+                } else if (msg.toLowerCase().includes("rate limit") || msg.toLowerCase().includes("too many requests")) {
+                    msg = "Email Rate Limit: Disable 'Confirm Email' in Supabase Auth Settings to skip email checks.";
                 }
                 addToast("Login Failed: " + msg, "info");
                 // Clean URL
@@ -420,9 +424,9 @@ export default function PixShotMega() {
                     });
                     socketRef.current?.emit('player:identify', { uid: profile.uid, name: profile.username, avatar: profile.avatar });
                 } else {
-                    // Start Onboarding for Google/New users
-                    setAuthView('onboarding');
-                    setUiState((p: any) => ({ ...p, showAuth: true }));
+                    // Skip Onboarding/Auth force if disabled
+                    // setAuthView('onboarding');
+                    // setUiState((p: any) => ({ ...p, showAuth: true }));
                 }
             } else {
                 const saved = localStorage.getItem('pixshot_profile');
@@ -989,7 +993,7 @@ export default function PixShotMega() {
         setAuth({ isLoggedIn: false, username: '', uid: '', password: '' });
         localStorage.removeItem('pixshot_auth');
         setGlobalProfile({ username: 'Guest', uid: `GUEST_${Math.floor(Math.random() * 10000)}`, coins: 0, tokens: 0, highscore: 0, totalKills: 0, matches: 0, ownedClasses: ['basic'], avatar: '', playtime: 0 });
-        setUiState((p: any) => ({ ...p, showAuth: true, showProfile: false }));
+        setUiState((p: any) => ({ ...p, showAuth: false, showProfile: false }));
         addToast("Logged out", 'info');
     }
 
@@ -2896,6 +2900,8 @@ export default function PixShotMega() {
                             {authView === 'onboarding' && <p className="text-emerald-400 text-[10px] font-black uppercase tracking-[0.5em] mt-6">Final Integration</p>}
                         </div>
 
+                        <button onClick={() => setUiState((p: any) => ({ ...p, showAuth: false }))} className="absolute top-8 right-8 text-slate-500 hover:text-white transition-colors text-xl">✕</button>
+
                         {/* LOGIN VIEW */}
                         {authView === 'login' && (
                             <div className="w-full flex flex-col gap-6">
@@ -3106,10 +3112,24 @@ export default function PixShotMega() {
                                             </button>
                                         </div>
 
-                                        <div className="flex items-center gap-2 mt-2 w-full">
-                                            <button onClick={() => { setUiState((p: any) => ({ ...p, showFriends: true })); setFriendTab('all'); }} className="flex-1 py-4 bg-indigo-600/10 border border-indigo-500/30 text-indigo-400 rounded-2xl font-black uppercase tracking-[0.2em] text-[10px] hover:bg-indigo-600/20 active:scale-95 transition-all">
-                                                <span className="text-sm">➕</span> Find Party
-                                            </button>
+                                        <div className="flex flex-col gap-2 mt-2 w-full">
+                                            <div className="text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em] ml-2 mb-1 text-center">Pilot Handle</div>
+                                            <input 
+                                                type="text" 
+                                                placeholder="Enter Name" 
+                                                maxLength={16}
+                                                className="w-full bg-slate-900/50 border-2 border-slate-800 text-white px-6 py-4 rounded-2xl outline-none focus:border-cyan-500 transition-all font-black text-center text-lg placeholder:text-slate-700" 
+                                                value={globalProfile.username} 
+                                                onChange={e => setGlobalProfile(p => ({ ...p, username: e.target.value || 'Guest' }))} 
+                                            />
+                                            <div className="flex items-center gap-2 mt-2">
+                                                <button onClick={() => { setUiState((p: any) => ({ ...p, showFriends: true })); setFriendTab('all'); }} className="flex-1 py-4 bg-indigo-600/10 border border-indigo-500/30 text-indigo-400 rounded-2xl font-black uppercase tracking-[0.2em] text-[10px] hover:bg-indigo-600/20 active:scale-95 transition-all">
+                                                    <span className="text-sm">➕</span> Find Party
+                                                </button>
+                                                <button onClick={() => setUiState((p: any) => ({ ...p, showAuth: true }))} className="flex-1 py-4 bg-slate-800/50 border border-slate-700 text-slate-400 rounded-2xl font-black uppercase tracking-[0.2em] text-[10px] hover:bg-slate-700 active:scale-95 transition-all">
+                                                    <span className="text-sm">🔑</span> Login
+                                                </button>
+                                            </div>
                                         </div>
 
                                         <button onClick={() => {
