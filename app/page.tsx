@@ -400,43 +400,41 @@ export default function PixShotMega() {
         // Update Guest UID with random on client
         setGlobalProfile(p => p.uid === 'GUEST_0000' ? { ...p, uid: `GUEST_${Math.floor(Math.random() * 10000)}` } : p);
 
-        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-            if (session?.user) {
-                const user = session.user;
-                
-                // Fetch real profile data
-                const { data: profile } = await supabase.from('players').select('*').eq('uid', user.id).single();
-                
-                if (profile) {
-                    setAuth({ isLoggedIn: true, username: profile.username || 'Player', uid: profile.uid, password: '' });
-                    setUiState((p: any) => ({ ...p, showAuth: false }));
-                    setGlobalProfile({
-                        username: profile.username,
-                        uid: profile.uid,
-                        coins: profile.coins,
-                        tokens: profile.tokens,
-                        highscore: profile.highscore,
-                        totalKills: profile.total_kills,
-                        matches: profile.matches,
-                        ownedClasses: profile.owned_classes || ['basic'],
-                        avatar: profile.avatar || '',
-                        playtime: profile.playtime || 0
-                    });
-                    socketRef.current?.emit('player:identify', { uid: profile.uid, name: profile.username, avatar: profile.avatar });
-                } else {
-                    // Skip Onboarding/Auth force if disabled
-                    // setAuthView('onboarding');
-                    // setUiState((p: any) => ({ ...p, showAuth: true }));
-                }
+        // === CUSTOM TABLE-BASED AUTH CHECK ===
+        const initSession = async () => {
+            const savedSession = localStorage.getItem('pixshot_session');
+            if (savedSession) {
+                try {
+                    const session = JSON.parse(savedSession);
+                    const { data: profile } = await supabase.from('players').select('*').eq('uid', session.uid).single();
+                    if (profile) {
+                        setAuth({ isLoggedIn: true, username: profile.username || 'Player', uid: profile.uid, password: '' });
+                        setUiState((p: any) => ({ ...p, showAuth: false }));
+                        setGlobalProfile({
+                            username: profile.username,
+                            uid: profile.uid,
+                            coins: profile.coins,
+                            tokens: profile.tokens,
+                            highscore: profile.highscore,
+                            totalKills: profile.total_kills,
+                            matches: profile.matches,
+                            ownedClasses: profile.owned_classes || ['basic'],
+                            avatar: profile.avatar || '',
+                            playtime: profile.playtime || 0
+                        });
+                        socketRef.current?.emit('player:identify', { uid: profile.uid, name: profile.username, avatar: profile.avatar });
+                    }
+                } catch (e) { localStorage.removeItem('pixshot_session'); }
             } else {
                 const saved = localStorage.getItem('pixshot_profile');
                 if (saved) {
                     try { setGlobalProfile((prev: any) => ({ ...prev, ...JSON.parse(saved) })); } catch (e) { }
                 }
             }
-        });
+        };
+        initSession();
 
-        return () => subscription.unsubscribe();
+        return () => {};
     }, []);
 
     useEffect(() => {
@@ -947,39 +945,66 @@ export default function PixShotMega() {
             return;
         }
         
-        const email = authInput.user.includes('@') ? authInput.user : `${authInput.user}@pixshot.internal`;
+        const username = authInput.user.trim();
+        const password = authInput.pass.trim();
 
         if (isRegister) {
-            const { data: authData, error: authError } = await supabase.auth.signUp({
-                email,
-                password: authInput.pass,
-            });
-
-            if (authError) {
-                addToast("Register Error: " + authError.message, 'info');
+            // 1. Check if user already exists
+            const { data: existing } = await supabase.from('players').select('uid').eq('username', username).single();
+            if (existing) {
+                addToast("Username already taken.", 'info');
                 return;
             }
 
-            if (authData.user) {
-                await supabase.from('players').insert([{ 
-                    uid: authData.user.id, 
-                    username: authInput.user.split('@')[0], 
-                    coins: 0, tokens: 0, highscore: 0, total_kills: 0, matches: 0, owned_classes: ['basic'],
-                    avatar: authInput.avatar || ''
-                }]);
-                addToast("Success! Please check your email or Login now.", 'info');
+            // 2. Create new user in PLAYERS table directly
+            const newUid = `user_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+            const { error } = await supabase.from('players').insert([{ 
+                uid: newUid, 
+                username: username, 
+                password: password, // Store in players table
+                coins: 0, tokens: 0, highscore: 0, total_kills: 0, matches: 0, owned_classes: ['basic'],
+                avatar: authInput.avatar || ''
+            }]);
+
+            if (error) {
+                addToast("Register Error: " + error.message, 'info');
+            } else {
+                addToast("Success! You can now login.", 'info');
                 setAuthView('login');
             }
         } else {
-            const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-                email,
-                password: authInput.pass,
-            });
+            // LOGIN: Check credentials in PLAYERS table
+            const { data: profile, error } = await supabase
+                .from('players')
+                .select('*')
+                .eq('username', username)
+                .eq('password', password)
+                .single();
 
-            if (authError) {
-                addToast("Login Failed: " + authError.message, 'info');
+            if (error || !profile) {
+                addToast("Login Failed: Invalid username or password", 'info');
                 return;
             }
+
+            // Successful Login
+            setAuth({ isLoggedIn: true, username: profile.username, uid: profile.uid, password: '' });
+            localStorage.setItem('pixshot_session', JSON.stringify({ uid: profile.uid }));
+            
+            setGlobalProfile({
+                username: profile.username,
+                uid: profile.uid,
+                coins: profile.coins,
+                tokens: profile.tokens,
+                highscore: profile.highscore,
+                totalKills: profile.total_kills,
+                matches: profile.matches,
+                ownedClasses: profile.owned_classes || ['basic'],
+                avatar: profile.avatar || '',
+                playtime: profile.playtime || 0
+            });
+            
+            setUiState((p: any) => ({ ...p, showAuth: false }));
+            addToast(`Welcome back, ${profile.username}!`, 'info');
         }
     };
 
@@ -989,9 +1014,8 @@ export default function PixShotMega() {
     };
 
     const logout = async () => {
-        await supabase.auth.signOut();
         setAuth({ isLoggedIn: false, username: '', uid: '', password: '' });
-        localStorage.removeItem('pixshot_auth');
+        localStorage.removeItem('pixshot_session');
         setGlobalProfile({ username: 'Guest', uid: `GUEST_${Math.floor(Math.random() * 10000)}`, coins: 0, tokens: 0, highscore: 0, totalKills: 0, matches: 0, ownedClasses: ['basic'], avatar: '', playtime: 0 });
         setUiState((p: any) => ({ ...p, showAuth: false, showProfile: false }));
         addToast("Logged out", 'info');
