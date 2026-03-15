@@ -392,7 +392,7 @@ export default function PixShotMega() {
                 const { data: profile } = await supabase.from('players').select('*').eq('uid', user.id).single();
                 
                 if (profile) {
-                    setAuth({ isLoggedIn: true, username: profile.username, uid: profile.uid });
+                    setAuth({ isLoggedIn: true, username: profile.username || 'Player', uid: profile.uid, password: '' });
                     setUiState((p: any) => ({ ...p, showAuth: false }));
                     setGlobalProfile({
                         username: profile.username,
