@@ -357,6 +357,24 @@ export default function PixShotMega() {
             gameRef.current.camera.zoom = 0.7;
         }
 
+        // --- Handle OAuth Redirect Errors ---
+        const handleOAuthErrors = () => {
+            const hash = window.location.hash;
+            const search = window.location.search;
+            const params = new URLSearchParams(hash ? hash.substring(1) : search);
+            const error = params.get('error_description') || params.get('error');
+            if (error) {
+                let msg = error.replace(/\+/g, ' ');
+                if (msg.includes("user email")) {
+                    msg = "Facebook didn't provide an email. Ensure 'email' permission is set to 'Advanced Access' in Meta Dashboard.";
+                }
+                addToast("Login Failed: " + msg, "info");
+                // Clean URL
+                window.history.replaceState({}, document.title, window.location.pathname);
+            }
+        };
+        handleOAuthErrors();
+
         // --- Calculate Socket URL on client mount ---
         let envUrl = process.env.NEXT_PUBLIC_SOCKET_URL?.trim();
         const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
@@ -859,7 +877,8 @@ export default function PixShotMega() {
         const { error } = await supabase.auth.signInWithOAuth({
             provider: 'facebook',
             options: {
-                redirectTo: window.location.origin
+                redirectTo: window.location.origin,
+                scopes: 'email,public_profile'
             }
         });
         
