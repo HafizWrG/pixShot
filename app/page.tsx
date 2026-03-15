@@ -244,6 +244,7 @@ export default function PixShotMega() {
     const glBufferRef = useRef<WebGLBuffer | null>(null);
     const glLocsRef = useRef<Record<string, any>>({});
 
+    const [mounted, setMounted] = useState(false);
     // === AUTH & SOCIAL SYSTEM ===
     const [auth, setAuth] = useState({ isLoggedIn: false, username: '', uid: '', password: '' });
     const [friends, setFriends] = useState<{ uid: string, name: string, status: string, lastSeen?: number }[]>([
@@ -266,36 +267,7 @@ export default function PixShotMega() {
     const [voiceEnabled, setVoiceEnabled] = useState(false);
     const localStreamRef = useRef<MediaStream | null>(null);
     const peersRef = useRef<Record<string, RTCPeerConnection>>({});
-    const [socketUrl, setSocketUrl] = useState(() => {
-        if (typeof window === 'undefined') return 'http://localhost:3001';
-        let envUrl = process.env.NEXT_PUBLIC_SOCKET_URL?.trim();
-        const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-
-        // DETECT INTERNAL RAILWAY URL (BROKEN FOR CLIENTS)
-        if (envUrl && envUrl.includes('.railway.internal')) {
-            console.error('[Socket] CRITICAL ERROR: You are using an INTERNAL Railway URL. The browser cannot connect to this.');
-            console.error('[Socket] Please use your PUBLIC Railway domain settings instead (e.g. https://your-app.up.railway.app)');
-            // Fallback to origin if we are on Vercel, or localhost if local
-            if (!isLocal) envUrl = undefined;
-        }
-
-        // 1. Check Env Variable First (Correct way for production)
-        if (envUrl) {
-            console.log('[Socket] Using NEXT_PUBLIC_SOCKET_URL:', envUrl);
-            return envUrl.replace('httpss://', 'https://');
-        }
-
-        // 2. Local fallback
-        if (isLocal) {
-            const localUrl = `${window.location.protocol}//${window.location.hostname}:3001`;
-            console.log('[Socket] Using Local fallback:', localUrl);
-            return localUrl;
-        }
-
-        // 3. Last resort
-        console.warn('[Socket] No NEXT_PUBLIC_SOCKET_URL found. Falling back to origin.');
-        return window.location.origin;
-    });
+    const [socketUrl, setSocketUrl] = useState('http://localhost:3001');
     const [connStatus, setConnStatus] = useState<'Disconnected' | 'Connecting' | 'Connected' | 'Error'>('Disconnected');
 
     // === TOAST NOTIFICATION SYSTEM ===
@@ -315,7 +287,7 @@ export default function PixShotMega() {
 
     // === GLOBAL PROFILE (Local Storage) ===
     const [globalProfile, setGlobalProfile] = useState({
-        username: 'Guest', uid: `GUEST_${Math.floor(Math.random() * 10000)}`, coins: 0, tokens: 0, highscore: 0, totalKills: 0, matches: 0, ownedClasses: ['basic'], avatar: '', playtime: 0
+        username: 'Guest', uid: 'GUEST_0000', coins: 0, tokens: 0, highscore: 0, totalKills: 0, matches: 0, ownedClasses: ['basic'], avatar: '', playtime: 0
     });
 
     const [serverList, setServerList] = useState<any[]>([]);
@@ -376,6 +348,7 @@ export default function PixShotMega() {
     });
 
     useEffect(() => {
+        setMounted(true);
         const ua = navigator.userAgent;
         const isAndroid = /Android/i.test(ua);
         const isMobile = isAndroid || /iPhone|iPad|iPod/i.test(ua);
@@ -383,6 +356,27 @@ export default function PixShotMega() {
             setSettings((p: any) => ({ ...p, isMobile: true }));
             gameRef.current.camera.zoom = 0.7;
         }
+
+        // --- Calculate Socket URL on client mount ---
+        let envUrl = process.env.NEXT_PUBLIC_SOCKET_URL?.trim();
+        const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        let targetUrl = '';
+
+        if (envUrl && envUrl.includes('.railway.internal')) {
+            if (!isLocal) envUrl = undefined;
+        }
+
+        if (envUrl) {
+            targetUrl = envUrl.replace('httpss://', 'https://');
+        } else if (isLocal) {
+            targetUrl = `${window.location.protocol}//${window.location.hostname}:3001`;
+        } else {
+            targetUrl = window.location.origin;
+        }
+        setSocketUrl(targetUrl);
+
+        // Update Guest UID with random on client
+        setGlobalProfile(p => p.uid === 'GUEST_0000' ? { ...p, uid: `GUEST_${Math.floor(Math.random() * 10000)}` } : p);
 
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
             if (session?.user) {
@@ -883,9 +877,22 @@ export default function PixShotMega() {
         if (file) {
             const reader = new FileReader();
             reader.onloadend = () => {
-                const base64 = reader.result as string;
-                if (isOnboarding) setOnboardingData(p => ({ ...p, avatar: base64 }));
-                else setAuthInput(p => ({ ...p, avatar: base64 }));
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    const MAX_SIZE = 128; // Smaller for avatars
+                    let w = img.width;
+                    let h = img.height;
+                    if (w > h) { if (w > MAX_SIZE) { h *= MAX_SIZE / w; w = MAX_SIZE; } }
+                    else { if (h > MAX_SIZE) { w *= MAX_SIZE / h; h = MAX_SIZE; } }
+                    canvas.width = w; canvas.height = h;
+                    const ctx = canvas.getContext('2d');
+                    ctx?.drawImage(img, 0, 0, w, h);
+                    const shrunkBase64 = canvas.toDataURL('image/jpeg', 0.8);
+                    if (isOnboarding) setOnboardingData(p => ({ ...p, avatar: shrunkBase64 }));
+                    else setAuthInput(p => ({ ...p, avatar: shrunkBase64 }));
+                };
+                img.src = reader.result as string;
             };
             reader.readAsDataURL(file);
         }
@@ -2717,6 +2724,8 @@ export default function PixShotMega() {
         { id: 'reload', name: 'Reload', color: 'bg-green-500' }, { id: 'moveSpd', name: 'Move Spd', color: 'bg-teal-400' }
     ];
 
+    if (!mounted) return <div className="bg-slate-950 min-h-screen"></div>;
+
     return (
         <div className="relative w-full h-full overflow-hidden bg-slate-950 select-none font-sans text-slate-100 touch-none overscroll-none"
             style={{
@@ -2874,11 +2883,11 @@ export default function PixShotMega() {
                                 <div className="space-y-4">
                                     <div className="relative group">
                                         <span className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-500 text-xl group-focus-within:text-cyan-400 transition-colors">👤</span>
-                                        <input type="text" placeholder="Username" className="w-full bg-slate-1000/50 border-2 border-slate-800 text-white pl-14 pr-6 py-5 rounded-3xl outline-none focus:border-cyan-500 focus:bg-slate-800/80 transition-all font-bold placeholder:text-slate-600 shadow-inner" value={authInput.user} onChange={e => setAuthInput((p: any) => ({ ...p, user: e.target.value }))} />
+                                        <input type="text" placeholder="Username" className="w-full bg-slate-950/50 border-2 border-slate-800 text-white pl-14 pr-6 py-5 rounded-3xl outline-none focus:border-cyan-500 focus:bg-slate-800/80 transition-all font-bold placeholder:text-slate-600 shadow-inner" value={authInput.user} onChange={e => setAuthInput((p: any) => ({ ...p, user: e.target.value }))} />
                                     </div>
                                     <div className="relative group">
                                         <span className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-500 text-xl group-focus-within:text-cyan-400 transition-colors">🔑</span>
-                                        <input type="password" placeholder="Password" className="w-full bg-slate-1000/50 border-2 border-slate-800 text-white pl-14 pr-6 py-5 rounded-3xl outline-none focus:border-cyan-500 focus:bg-slate-800/80 transition-all font-bold placeholder:text-slate-600 shadow-inner" value={authInput.pass} onChange={e => setAuthInput((p: any) => ({ ...p, pass: e.target.value }))} />
+                                        <input type="password" placeholder="Password" className="w-full bg-slate-950/50 border-2 border-slate-800 text-white pl-14 pr-6 py-5 rounded-3xl outline-none focus:border-cyan-500 focus:bg-slate-800/80 transition-all font-bold placeholder:text-slate-600 shadow-inner" value={authInput.pass} onChange={e => setAuthInput((p: any) => ({ ...p, pass: e.target.value }))} />
                                     </div>
                                 </div>
                                 <button onClick={() => handleLoginRegister(false)} className="w-full bg-gradient-to-br from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-black py-5 rounded-3xl shadow-[0_10px_30px_rgba(6,182,212,0.3)] active:scale-95 transition-all text-sm uppercase tracking-widest border-t border-white/20">Authorize Terminal</button>
@@ -2894,7 +2903,7 @@ export default function PixShotMega() {
                                         <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
                                     </svg>
                                     <span className="text-xs uppercase tracking-[0.2em]">Connect with Facebook</span>
-                                    <button className="absolute inset-0 bg-white/5 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700"></button>
+                                    <div className="absolute inset-0 bg-white/5 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700"></div>
                                 </button>
                                 
                                 <p className="text-center text-slate-500 text-xs font-bold mt-2">New pilot? <button onClick={() => setAuthView('register')} className="text-cyan-400 hover:text-cyan-300 underline underline-offset-4 decoration-cyan-900">Enlist here</button></p>
@@ -2930,7 +2939,7 @@ export default function PixShotMega() {
                             </div>
                         )}
 
-                        {/* ONBOARDING VIEW (POST-GOOGLE) */}
+                        {/* ONBOARDING VIEW (POST-SOCIAL) */}
                         {authView === 'onboarding' && (
                             <div className="w-full flex flex-col gap-6 text-center">
                                 <div className="bg-emerald-500/10 border border-emerald-500/20 p-4 rounded-2xl mb-2">
