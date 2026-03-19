@@ -955,7 +955,7 @@ export default function PixShotMega() {
         localStorage.setItem('pixshot_profile', JSON.stringify(newProfile));
         
         // 2. Send to Supabase asynchronously
-        if (auth.isLoggedIn && auth.uid) {
+        if (newProfile.uid) {
             try {
                 await supabase.from('players').update({
                     coins: newProfile.coins,
@@ -966,7 +966,7 @@ export default function PixShotMega() {
                     owned_classes: newProfile.ownedClasses,
                     avatar: newProfile.avatar,
                     playtime: newProfile.playtime
-                }).eq('uid', auth.uid);
+                }).eq('uid', newProfile.uid);
             } catch (err) {
                 console.warn("Failed to sync to Supabase (playing offline)", err);
             }
