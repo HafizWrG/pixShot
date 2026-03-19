@@ -13,24 +13,7 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 const fs = require('fs');
 const path = require('path');
-const mimetypes = {
-  '.html': 'text/html',
-  '.js': 'text/javascript',
-  '.css': 'text/css',
-  '.json': 'application/json',
-  '.png': 'image/png',
-  '.jpg': 'image/jpg',
-  '.gif': 'image/gif',
-  '.svg': 'image/svg+xml',
-  '.wav': 'audio/wav',
-  '.mp3': 'audio/mpeg',
-  '.mp4': 'video/mp4',
-  '.woff': 'application/font-woff',
-  '.ttf': 'application/font-ttf',
-  '.eot': 'application/vnd.ms-fontobject',
-  '.otf': 'application/font-otf',
-  '.wasm': 'application/wasm'
-};
+// MIME types are now handled automatically by Express static middleware
 
 
 // Load environment variables from .env.local for local development
@@ -38,10 +21,12 @@ try {
   if (fs.existsSync('.env.local')) {
     const envFile = fs.readFileSync('.env.local', 'utf8');
     envFile.split('\n').forEach(line => {
-      const match = line.trim().match(/^([^=]+)=(.*)$/);
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) return; // Skip empty lines and comments
+      const match = trimmed.match(/^([^=]+)=(.*)$/);
       if (match) {
         const key = match[1].trim();
-        const value = match[2].trim();
+        const value = match[2].trim().replace(/^["']|["']$/g, ''); // Trim quotes
         if (!process.env[key]) process.env[key] = value;
       }
     });
@@ -79,45 +64,39 @@ if (SUPABASE_URL && SUPABASE_KEY) {
   }
 }
 
-const httpServer = createServer((req, res) => {
-  const url = req.url === '/' ? '/index.html' : req.url;
-  const isInternal = url.startsWith('/socket.io') || url.startsWith('/admin');
+// Express Server Setup
+const express = require('express');
+const app = express();
+const httpServer = createServer(app);
 
-  if (url === '/health' || url === '/status') {
-    res.writeHead(200, { 'Content-Type': 'text/plain' });
-    return res.end('OK');
+// Robust CORS Middleware
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Requested-With, Authorization');
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
   }
+  next();
+});
 
-  if (!isInternal) {
-    let filePath = path.join(__dirname, 'out', url);
+// Health check
+app.get(['/health', '/status'], (req, res) => res.send('OK'));
 
-    // Support for Next.js trailing slash and pretty URLs
-    if (!path.extname(filePath) && fs.existsSync(filePath + '.html')) {
-      filePath += '.html';
-    } else if (fs.existsSync(filePath) && fs.statSync(filePath).isDirectory()) {
-      filePath = path.join(filePath, 'index.html');
+// Serve Next.js static production export
+const outPath = path.join(__dirname, 'out');
+app.use(express.static(outPath));
+
+// Fallback to index.html for undefined routes (Next.js SPA behavior)
+app.get('*', (req, res, next) => {
+    // Skip if it's a socket.io request (though express.static usually handles files first)
+    if (req.url.startsWith('/socket.io')) return next();
+    const indexPath = path.join(outPath, 'index.html');
+    if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+    } else {
+        res.status(404).send('Not Found');
     }
-
-    if (fs.existsSync(filePath)) {
-      const ext = path.extname(filePath).toLowerCase();
-      const contentType = mimetypes[ext] || 'application/octet-stream';
-      res.writeHead(200, { 'Content-Type': contentType });
-      const readStream = fs.createReadStream(filePath);
-      readStream.pipe(res);
-      return;
-    } else if (!path.extname(url)) {
-      // Fallback to index.html for SPA routes
-      const indexPath = path.join(__dirname, 'out', 'index.html');
-      if (fs.existsSync(indexPath)) {
-        res.writeHead(200, { 'Content-Type': 'text/html' });
-        fs.createReadStream(indexPath).pipe(res);
-        return;
-      }
-    }
-
-    res.writeHead(404);
-    res.end('404 Not Found');
-  }
 });
 
 const io = new Server(httpServer, {
@@ -125,11 +104,11 @@ const io = new Server(httpServer, {
     origin: "*",
     methods: ["GET", "POST"]
   },
-  transports: ['polling', 'websocket'],
+  transports: ['websocket', 'polling'],
   allowEIO3: true
 });
 
-console.log('[Server] Socket.io initialized');
+console.log('[Server] Socket.io initialized with Express');
 
 // === SERVER STATE ===
 const brRooms = new Map(); // roomId -> { players: Map<socketId, playerData> }
@@ -1047,7 +1026,7 @@ setInterval(() => {
   }
 }, 60); // Reduced tick rate slightly from 50ms to 60ms to save CPU
 
-const PORT = process.env.NEXT_PUBLIC_GAME_PORT || 3000;
+const PORT = process.env.PORT || process.env.NEXT_PUBLIC_GAME_PORT || 3000;
 const HOST = process.env.GAME_HOST || '0.0.0.0'; // Use '0.0.0.0' to listen on all interfaces
 
 httpServer.on('error', (e) => {
