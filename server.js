@@ -704,10 +704,7 @@ setInterval(() => {
 
           // Bot AI Combat & Movement - MAJOR OVERHAUL
           if (p.isBot && room.started) {
-            // Bot regeneration (like a player)
-            if (p.hp < p.maxHp) p.hp += 0.15;
-
-            const botSpeed = p.class === 'melee' ? 10 : (p.class === 'machinegun' ? 8.5 : 7);
+            const botSpeed = p.class === 'melee' ? 14 : (p.class === 'machinegun' ? 12 : 10);
             let targetAngle = p.angle || 0;
             let nearestDist = Infinity;
             let targetObj = null;
@@ -791,8 +788,8 @@ setInterval(() => {
                   bSpd = 18; bDmg = 12; bReload = 350; bulletCount = 1; spreadAngle = 0.05;
                 }
 
-                // Add aim inaccuracy (bots aren't perfect)
-                const aimError = (Math.random() - 0.5) * 0.12;
+                // Add aim inaccuracy (bots aren't perfect, but better now)
+                const aimError = (Math.random() - 0.5) * 0.04;
 
                 for (let bc = 0; bc < bulletCount; bc++) {
                   const bulletAngle = targetAngle + aimError + (bc - (bulletCount - 1) / 2) * spreadAngle;
