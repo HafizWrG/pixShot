@@ -4,6 +4,13 @@ console.log('[Server] Admin UI loaded');
 const { createServer } = require('http');
 const { Server } = require('socket.io');
 console.log('[Server] Core modules loaded');
+
+process.on('uncaughtException', (err) => {
+  console.error('!!!! FATAL UNCAUGHT EXCEPTION:', err);
+});
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('!!!! UNHANDLED REJECTION:', reason);
+});
 const fs = require('fs');
 const path = require('path');
 const mimetypes = {
@@ -47,11 +54,22 @@ const { createClient } = require('@supabase/supabase-js');
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 let supabase = null;
+const INDONESIAN_NAMES = [
+  "Budi Santoso", "Agus Setiawan", "Siti Aminah", "Eko Prasetyo", "Dewi Lestari",
+  "Ahmad Fauzi", "Bambang Pamungkas", "Joko Susilo", "Rina Wulandari", "Santi Wijaya",
+  "Hafiz Ramadhan", "Syamsul Arifin", "Putu Gede", "Made Wirawan", "Nyoman Sukarja",
+  "Ketut Abadi", "Ridwan Kamil", "Ganjar Pranowo", "Anies Baswedan", "Gibran Rakabuming",
+  "Kaesang Pangarep", "Prabowo Subianto", "Luhut Panjaitan", "Sri Mulyani", "Retno Marsudi",
+  "Dian Sastrowardoyo", "Nicholas Saputra", "Reza Rahadian", "Pevita Pearce", "Raisa Andriana",
+  "Tulus", "Isyana Sarasvati", "Andmesh", "Tiara Andini", "Lyodra", "Ziva",
+  "Wureg", "Abina", "Cup Manager", "Sapri", "Udin", "Sule", "Andre", "Tukul"
+];
+
 if (SUPABASE_URL && SUPABASE_KEY) {
   supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
   console.log('[Server] Supabase client created');
   console.log('[BR] Connected to Supabase DB');
-  
+
   // PURGE STALE SERVERS ON STARTUP
   if (supabase) {
     supabase.from('game_servers').delete().neq('room_id', 'KEEP_ALIVE').then(({ error }) => {
@@ -64,7 +82,7 @@ if (SUPABASE_URL && SUPABASE_KEY) {
 const httpServer = createServer((req, res) => {
   const url = req.url === '/' ? '/index.html' : req.url;
   const isInternal = url.startsWith('/socket.io') || url.startsWith('/admin');
-  
+
   if (url === '/health' || url === '/status') {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     return res.end('OK');
@@ -72,50 +90,46 @@ const httpServer = createServer((req, res) => {
 
   if (!isInternal) {
     let filePath = path.join(__dirname, 'out', url);
-    
+
     // Support for Next.js trailing slash and pretty URLs
     if (!path.extname(filePath) && fs.existsSync(filePath + '.html')) {
-        filePath += '.html';
+      filePath += '.html';
     } else if (fs.existsSync(filePath) && fs.statSync(filePath).isDirectory()) {
-        filePath = path.join(filePath, 'index.html');
+      filePath = path.join(filePath, 'index.html');
     }
 
     if (fs.existsSync(filePath)) {
-        const ext = path.extname(filePath).toLowerCase();
-        const contentType = mimetypes[ext] || 'application/octet-stream';
-        res.writeHead(200, { 'Content-Type': contentType });
-        const readStream = fs.createReadStream(filePath);
-        readStream.pipe(res);
-        return;
+      const ext = path.extname(filePath).toLowerCase();
+      const contentType = mimetypes[ext] || 'application/octet-stream';
+      res.writeHead(200, { 'Content-Type': contentType });
+      const readStream = fs.createReadStream(filePath);
+      readStream.pipe(res);
+      return;
     } else if (!path.extname(url)) {
-        // Fallback to index.html for SPA routes
-        const indexPath = path.join(__dirname, 'out', 'index.html');
-        if (fs.existsSync(indexPath)) {
-            res.writeHead(200, { 'Content-Type': 'text/html' });
-            fs.createReadStream(indexPath).pipe(res);
-            return;
-        }
+      // Fallback to index.html for SPA routes
+      const indexPath = path.join(__dirname, 'out', 'index.html');
+      if (fs.existsSync(indexPath)) {
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        fs.createReadStream(indexPath).pipe(res);
+        return;
+      }
     }
-    
+
     res.writeHead(404);
     res.end('404 Not Found');
   }
 });
 
-// Update CORS for production and all-device connectivity
 const io = new Server(httpServer, {
   cors: {
-    origin: (origin, callback) => callback(null, true), // Allow ANY origin dynamically
-    methods: ['GET', 'POST', 'OPTIONS'],
-    credentials: false
+    origin: "*",
+    methods: ["GET", "POST"]
   },
-  allowEIO3: true,
-  pingTimeout: 60000,
-  pingInterval: 25000,
-  transports: ['polling', 'websocket']
+  transports: ['polling', 'websocket'],
+  allowEIO3: true
 });
 
-console.log('[Server] Socket.io initialized with dynamic CORS');
+console.log('[Server] Socket.io initialized');
 
 // === SERVER STATE ===
 const brRooms = new Map(); // roomId -> { players: Map<socketId, playerData> }
@@ -154,6 +168,7 @@ function getRoomId(socket, requestedRoomId, mode = 'battleroyale') {
   const newRoomId = `BR_${Date.now()}_${Math.random().toString(36).slice(2)}`;
   brRooms.set(newRoomId, {
     players: new Map(),
+    bullets: [], // Server-side bullets for bot collision
     mode: mode,
     maxRoomPlayers: MAX_PLAYERS,
     mapSize: MAP_SIZE,
@@ -194,7 +209,7 @@ async function refreshGlobalLeaderboard() {
     .select('username, highscore, total_kills, avatar, playtime')
     .order('highscore', { ascending: false })
     .limit(20);
-  
+
   if (!error && data) {
     globalTopPlayers.length = 0;
     globalTopPlayers.push(...data);
@@ -248,25 +263,25 @@ io.on('connection', (socket) => {
   // === USER IDENTIFICATION & PRESENCE ===
   socket.on('player:identify', ({ uid, name, avatar }) => {
     if (!uid) return;
-    const sessionData = { 
-      uid, 
-      name, 
-      socketId: socket.id, 
-      status: 'Online', 
-      lastSeen: Date.now(), 
+    const sessionData = {
+      uid,
+      name,
+      socketId: socket.id,
+      status: 'Online',
+      lastSeen: Date.now(),
       startTime: Date.now(),
-      avatar 
+      avatar
     };
     onlinePlayers.set(uid, sessionData);
-    
+
     // Update DB
     if (supabase) {
-      supabase.from('players').update({ 
-        is_online: true, 
-        last_seen: new Date().toISOString() 
+      supabase.from('players').update({
+        is_online: true,
+        last_seen: new Date().toISOString()
       }).eq('uid', uid).then();
     }
-    
+
     io.emit('player:status_update', { uid, status: 'Online', lastSeen: sessionData.lastSeen });
     io.emit('stats:online_count', onlinePlayers.size);
   });
@@ -295,8 +310,8 @@ io.on('connection', (socket) => {
       uid: playerData.uid,
       name: playerData.name,
       class: playerData.class || 'basic',
-      x: Math.random() * room.mapSize,
-      y: Math.random() * room.mapSize,
+      x: 200 + Math.random() * (room.mapSize - 400),
+      y: 200 + Math.random() * (room.mapSize - 400),
       vx: 0, vy: 0,
       angle: 0,
       hp: 150,
@@ -612,20 +627,20 @@ io.on('connection', (socket) => {
       if (data.socketId === socket.id) {
         disconnectedUid = uid;
         const playDuration = Math.floor((Date.now() - data.startTime) / 1000);
-        
+
         // Update Playtime in DB
         if (supabase) {
-           // Atomic increment for playtime
-           const { data: currentPlaytime } = await supabase.from('players').select('playtime').eq('uid', uid).single();
-           const newTotal = (currentPlaytime?.playtime || 0) + playDuration;
-           
-           await supabase.from('players').update({ 
-             is_online: false, 
-             last_seen: new Date().toISOString(),
-             playtime: newTotal
-           }).eq('uid', uid);
+          // Atomic increment for playtime
+          const { data: currentPlaytime } = await supabase.from('players').select('playtime').eq('uid', uid).single();
+          const newTotal = (currentPlaytime?.playtime || 0) + playDuration;
+
+          await supabase.from('players').update({
+            is_online: false,
+            last_seen: new Date().toISOString(),
+            playtime: newTotal
+          }).eq('uid', uid);
         }
-        
+
         onlinePlayers.delete(uid);
         io.emit('player:status_update', { uid, status: 'Offline', lastSeen: Date.now() });
         io.emit('stats:online_count', onlinePlayers.size);
@@ -705,148 +720,322 @@ setInterval(() => {
 
         // Cek pemain & Bot AI
         room.players.forEach(p => {
-          if (p.alive) {
-            const distToCenter = Math.hypot(p.x - targetSafeZone.x, p.y - targetSafeZone.y);
+          if (!p.alive) return;
+          const distToCenter = Math.hypot(p.x - targetSafeZone.x, p.y - targetSafeZone.y);
 
-            // Bot AI Combat & Movement
-            if (p.isBot && room.started) {
-              const botSpeed = 8; // Faster bots
-              let targetAngle = p.angle;
-              let nearestDist = 1200; // Increased detection range
-              let targetObj = null;
+          // Bot AI Combat & Movement - MAJOR OVERHAUL
+          if (p.isBot && room.started) {
+            // Bot regeneration (like a player)
+            if (p.hp < p.maxHp) p.hp += 0.15;
 
-              // Targeting: Find nearest alive opponent (Player or another Bot)
-              room.players.forEach(p2 => {
-                if (p2.alive && p2.socketId !== p.socketId) {
-                  const d = Math.hypot(p2.x - p.x, p2.y - p.y);
-                  if (d < nearestDist) {
-                    nearestDist = d;
-                    targetObj = p2;
-                  }
+            const botSpeed = p.class === 'melee' ? 10 : (p.class === 'machinegun' ? 8.5 : 7);
+            let targetAngle = p.angle || 0;
+            let nearestDist = Infinity;
+            let targetObj = null;
+            let lowestHpTarget = null;
+            let lowestHp = Infinity;
+
+            // SMART Targeting: Prioritize low HP enemies AND nearby threats
+            room.players.forEach(p2 => {
+              if (p2.alive && p2.socketId !== p.socketId) {
+                const d = Math.hypot(p2.x - p.x, p2.y - p.y);
+                if (d < 1200) { // Detection range
+                  if (d < nearestDist) { nearestDist = d; targetObj = p2; }
+                  if (p2.hp < lowestHp && d < 800) { lowestHp = p2.hp; lowestHpTarget = p2; }
                 }
-              });
+              }
+            });
 
-              if (targetObj) {
-                targetAngle = Math.atan2(targetObj.y - p.y, targetObj.x - p.x);
-                // Move towards target
-                const isMelee = p.class === 'melee';
-                if (nearestDist > (isMelee ? 30 : 200)) {
-                  p.vx = Math.cos(targetAngle) * botSpeed;
-                  p.vy = Math.sin(targetAngle) * botSpeed;
-                } else {
-                  p.vx = 0; p.vy = 0;
-                }
+            // Pick the best target: prefer low HP if close enough
+            if (lowestHpTarget && nearestDist < 600) targetObj = lowestHpTarget;
 
-                // Attack Logic
-                if (p.cooldown <= 0) {
-                  const bSpd = 18;
-                  const bDmg = p.class === 'warden' ? 20 : (p.class === 'machinegun' ? 5 : 10);
-                  const bReload = p.class === 'machinegun' ? 100 : (p.class === 'warden' ? 600 : 300);
+            if (targetObj) {
+              targetAngle = Math.atan2(targetObj.y - p.y, targetObj.x - p.x);
+              const isMelee = p.class === 'melee';
+              const isGunner = p.class === 'machinegun';
+              const isWarden = p.class === 'warden';
+              const isFlame = p.class === 'flamethrower';
 
-                  io.to(roomId).emit('br:bullet', {
-                    x: p.x + Math.cos(targetAngle) * 40,
-                    y: p.y + Math.sin(targetAngle) * 40,
-                    vx: Math.cos(targetAngle) * bSpd,
-                    vy: Math.sin(targetAngle) * bSpd,
-                    life: 80,
-                    maxLife: 80,
-                    damage: bDmg,
-                    type: p.class === 'warden' ? 'tex_warden' : 'basic',
-                    shooterId: p.socketId,
-                    a: targetAngle
-                  });
-                  p.cooldown = bReload;
-                }
+              // Class-specific ideal distances
+              const idealDist = isMelee ? 40 : (isWarden ? 400 : (isGunner ? 200 : 280));
+
+              // MOVEMENT: Approach, retreat, or strafe based on class
+              if (nearestDist > idealDist + 80) {
+                // Approach target with slight angle variation for natural movement
+                const approachAngle = targetAngle + (Math.sin(now * 0.003 + p.x) * 0.15);
+                p.vx = Math.cos(approachAngle) * botSpeed;
+                p.vy = Math.sin(approachAngle) * botSpeed;
+              } else if (nearestDist < idealDist - 60) {
+                // Retreat  
+                p.vx = -Math.cos(targetAngle) * (botSpeed * 0.8);
+                p.vy = -Math.sin(targetAngle) * (botSpeed * 0.8);
               } else {
-                // No target: Move towards Safe Zone center and wander
-                let angleToCenter = Math.atan2(targetSafeZone.y - p.y, targetSafeZone.x - p.x);
-                angleToCenter += (Math.random() - 0.5) * 0.5; // Wander
-                
-                p.vx = Math.cos(angleToCenter) * (botSpeed * 0.7);
-                p.vy = Math.sin(angleToCenter) * (botSpeed * 0.7);
-                targetAngle = angleToCenter;
+                // Strafe (circle around target like a real player)
+                const strafeDir = (Math.sin(now * 0.002 + p.y) > 0) ? 1 : -1; // Change strafe direction periodically
+                const strafeAngle = targetAngle + (Math.PI / 2) * strafeDir;
+                p.vx = Math.cos(strafeAngle) * (botSpeed * 0.65);
+                p.vy = Math.sin(strafeAngle) * (botSpeed * 0.65);
               }
 
-              if (p.cooldown > 0) p.cooldown -= 60;
-              p.angle = targetAngle;
-              p.x += p.vx;
-              p.y += p.vy;
+              // Dodge when getting hit (reactive AI)
+              if (p.lastHp !== undefined && p.hp < p.lastHp) {
+                const dodgeAngle = targetAngle + Math.PI / 2 * (Math.random() > 0.5 ? 1 : -1);
+                p.vx = Math.cos(dodgeAngle) * botSpeed * 1.5;
+                p.vy = Math.sin(dodgeAngle) * botSpeed * 1.5;
+              }
+              p.lastHp = p.hp;
 
-              // Ensure bots stay in map
-              p.x = Math.max(100, Math.min(room.mapSize - 100, p.x));
-              p.y = Math.max(100, Math.min(room.mapSize - 100, p.y));
-              
-              p.hasChanged = true;
+              // DASH (Player-like, class-specific cooldowns)
+              if (!p.dashCooldown) p.dashCooldown = 0;
+              if (p.dashCooldown > 0) p.dashCooldown -= (1000 / 60);
+              if (p.dashCooldown <= 0 && Math.random() < 0.008) {
+                const dashAngle = isMelee ? targetAngle : (targetAngle + Math.PI); // Melee dashes IN, others dash AWAY
+                p.vx += Math.cos(dashAngle) * 25;
+                p.vy += Math.sin(dashAngle) * 25;
+                p.dashCooldown = 3000; // 3 second cooldown
+              }
+
+              // SHOOTING - Class-specific weapons
+              if (p.cooldown > 0) p.cooldown -= (1000 / 60);
+              if (p.cooldown <= 0 && nearestDist < 900) {
+                let bSpd, bDmg, bReload, bulletCount, spreadAngle;
+
+                if (isGunner) { // Machinegun: Fast fire, low damage, slight spread
+                  bSpd = 20; bDmg = 8; bReload = 100; bulletCount = 1; spreadAngle = 0.08;
+                } else if (isMelee) { // Melee: Body charge + close range burst
+                  bSpd = 15; bDmg = 18; bReload = 500; bulletCount = 3; spreadAngle = 0.3;
+                } else if (isWarden) { // Warden: Sonic wave
+                  bSpd = 12; bDmg = 25; bReload = 800; bulletCount = 1; spreadAngle = 0;
+                } else if (isFlame) { // Flamethrower: TNT projectile
+                  bSpd = 14; bDmg = 15; bReload = 600; bulletCount = 1; spreadAngle = 0;
+                } else { // Basic & others
+                  bSpd = 18; bDmg = 12; bReload = 350; bulletCount = 1; spreadAngle = 0.05;
+                }
+
+                // Add aim inaccuracy (bots aren't perfect)
+                const aimError = (Math.random() - 0.5) * 0.12;
+
+                for (let bc = 0; bc < bulletCount; bc++) {
+                  const bulletAngle = targetAngle + aimError + (bc - (bulletCount - 1) / 2) * spreadAngle;
+                  const bullet = {
+                    x: p.x + Math.cos(bulletAngle) * 45,
+                    y: p.y + Math.sin(bulletAngle) * 45,
+                    vx: Math.cos(bulletAngle) * bSpd,
+                    vy: Math.sin(bulletAngle) * bSpd,
+                    life: 100,
+                    damage: bDmg,
+                    penetration: 1,
+                    ownerId: p.socketId,
+                    isEnemy: true,
+                    type: isWarden ? 'warden_sonic_wave' : (isFlame ? 'tnt' : 'player_bullet')
+                  };
+                  if (!room.bullets) room.bullets = [];
+                  room.bullets.push(bullet);
+                  io.to(roomId).emit('br:bullet', bullet);
+                }
+                p.cooldown = bReload;
+              }
+            } else {
+              // No target: Move toward safe zone center with random wandering
+              const angleToCenter = Math.atan2(targetSafeZone.y - p.y, targetSafeZone.x - p.x);
+              const wanderOffset = Math.sin(now * 0.001 + p.x * 0.01) * 0.5;
+              p.vx = Math.cos(angleToCenter + wanderOffset) * (botSpeed * 0.6);
+              p.vy = Math.sin(angleToCenter + wanderOffset) * (botSpeed * 0.6);
+              targetAngle = angleToCenter + wanderOffset;
             }
 
-            // Storm Damage processing...
-            if (distToCenter > safeRadius) {
-              p.hp -= (15 / (1000 / 60)); // Buffed storm damage
-              p.hasChanged = true;
-              if (p.hp <= 0 && p.alive) {
-                p.alive = false; p.hp = 0;
-                io.to(roomId).emit('br:kill_feed', { killerName: 'The Storm', victimName: p.name, aliveCount: Array.from(room.players.values()).filter(pp => pp.alive).length });
-                const targetSocketId = Array.from(room.players.keys()).find(key => room.players.get(key) === p);
-                if (targetSocketId && !p.isBot) io.to(targetSocketId).emit('br:you_died', { killerName: 'The Storm', kills: 0 });
-              }
+            p.angle = targetAngle;
+            p.x += p.vx;
+            p.y += p.vy;
+
+            // Apply friction (like real physics)
+            p.vx *= 0.85;
+            p.vy *= 0.85;
+
+            // Keep bot within map bounds
+            const margin = 200;
+            p.x = Math.max(margin, Math.min(room.mapSize - margin, p.x));
+            p.y = Math.max(margin, Math.min(room.mapSize - margin, p.y));
+            p.hasChanged = true;
+          }
+
+          // Storm Damage
+          if (distToCenter > safeRadius) {
+            p.hp -= (15 / (1000 / 60));
+            p.hasChanged = true;
+            if (p.hp <= 0 && p.alive) {
+              p.alive = false; p.hp = 0;
+              io.to(roomId).emit('br:kill_feed', { killerName: 'The Storm', victimName: p.name, aliveCount: Array.from(room.players.values()).filter(pp => pp.alive).length });
+              if (!p.isBot) io.to(p.socketId).emit('br:you_died', { killerName: 'The Storm' });
             }
           }
         });
+
+        // === SERVER-SIDE BULLET COLLISION (Bot bullets hitting players/bots) ===
+        if (!room.bullets) room.bullets = [];
+        for (let bi = room.bullets.length - 1; bi >= 0; bi--) {
+          const b = room.bullets[bi];
+          if (!b) continue;
+          b.x += b.vx;
+          b.y += b.vy;
+          b.life -= 1;
+
+          if (b.life <= 0 || b.x < 0 || b.y < 0 || b.x > room.mapSize || b.y > room.mapSize) {
+            room.bullets.splice(bi, 1);
+            continue;
+          }
+
+          // Check collision with all players (including bots)
+          let bulletHit = false;
+          room.players.forEach(target => {
+            if (bulletHit) return;
+            if (!target.alive || target.socketId === b.ownerId) return;
+            const dx = b.x - target.x;
+            const dy = b.y - target.y;
+            const hitRadius = (target.size || 30) / 2;
+            if (dx * dx + dy * dy < hitRadius * hitRadius) {
+              target.hp -= b.damage;
+              target.hasChanged = true;
+              bulletHit = true;
+
+              // Knockback
+              const angle = Math.atan2(b.vy, b.vx);
+              target.vx = (target.vx || 0) + Math.cos(angle) * 3;
+              target.vy = (target.vy || 0) + Math.sin(angle) * 3;
+
+              if (target.hp <= 0 && target.alive) {
+                target.alive = false;
+                target.hp = 0;
+                const shooter = room.players.get(b.ownerId);
+                if (shooter) shooter.kills = (shooter.kills || 0) + 1;
+
+                // Kill feed broadcast
+                const aliveCount = Array.from(room.players.values()).filter(pp => pp.alive).length;
+                io.to(roomId).emit('br:kill_feed', {
+                  killerName: shooter?.name || 'Unknown',
+                  victimName: target.name,
+                  aliveCount
+                });
+
+                // Notify victim
+                if (!target.isBot) {
+                  io.to(target.socketId).emit('br:you_died', {
+                    killerName: shooter?.name || 'Unknown',
+                    kills: shooter?.kills || 0
+                  });
+                }
+
+                // Broadcast HP update
+                io.to(roomId).emit('br:hp_update', {
+                  socketId: target.socketId,
+                  hp: 0,
+                  alive: false
+                });
+
+                // Check for winner
+                const alivePlayers = Array.from(room.players.values()).filter(pp => pp.alive);
+                if (alivePlayers.length === 1) {
+                  io.to(roomId).emit('br:winner', { winner: alivePlayers[0] });
+                  refreshGlobalLeaderboard();
+                  setTimeout(() => {
+                    brRooms.delete(roomId);
+                    if (supabase) supabase.from('game_servers').delete().match({ room_id: roomId }).then();
+                    room.players.forEach((_, sid) => playerToRoom.delete(sid));
+                    broadcastServerList();
+                  }, 5000);
+                }
+              } else {
+                // Broadcast HP update for damaged player
+                io.to(roomId).emit('br:hp_update', {
+                  socketId: target.socketId,
+                  hp: target.hp,
+                  alive: target.alive
+                });
+              }
+            }
+          });
+          if (bulletHit) room.bullets.splice(bi, 1);
+        }
+
       }
     } else if ((room.mode === 'battleroyale' || room.mode === 'pvp1v1') && !room.started && !room.countingDown) {
-      // Auto-Fill Logic
-      // Apabila dalam waktu 1 menit sudah tak ada lagi pemain masuk maka akan di isi oleh bot
-      if (now - room.createdAt >= 60000 && room.players.size > 0 && room.players.size < room.maxRoomPlayers) {
-        console.log(`[BR] Room ${roomId} inactive for 1 min. Filling with bots.`);
+      // Auto-Fill Logic - Fill with bots after 30 seconds of waiting
+      if (now - room.createdAt >= 30000 && room.players.size > 0 && room.players.size < room.maxRoomPlayers) {
+        console.log(`[BR] Room ${roomId} inactive for 30s. Filling with bots.`);
         const botsToFill = room.maxRoomPlayers - room.players.size;
+        const usedNames = new Set();
+        room.players.forEach(p => usedNames.add(p.name));
 
         for (let i = 0; i < botsToFill; i++) {
-          const botId = `BOT_${Math.random().toString(36).slice(2)}`;
+          const botId = `BOT_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
           const botClasses = ['basic', 'machinegun', 'melee', 'warden', 'flamethrower', 'necromancer'];
           const botClass = botClasses[Math.floor(Math.random() * botClasses.length)];
+
+          // Pick unique Indonesian name
+          let botName;
+          let attempts = 0;
+          do {
+            botName = INDONESIAN_NAMES[Math.floor(Math.random() * INDONESIAN_NAMES.length)];
+            attempts++;
+          } while (usedNames.has(botName) && attempts < 50);
+          usedNames.add(botName);
+
+          // Spawn within valid map bounds with safe margin
+          const margin = 300;
+          const mapMax = room.mapSize - margin;
+          const spawnX = margin + Math.random() * (mapMax - margin);
+          const spawnY = margin + Math.random() * (mapMax - margin);
+
+          // Class-specific HP
+          const classHp = { basic: 150, machinegun: 120, melee: 200, warden: 180, flamethrower: 140, necromancer: 130 };
+          const botHp = classHp[botClass] || 150;
+
           const bData = {
             socketId: botId,
             uid: botId,
-            name: `Bot_${Math.floor(Math.random() * 9999)}`,
+            name: `${botName}`,
             class: botClass,
-            x: Math.random() * room.mapSize, y: Math.random() * room.mapSize,
+            x: spawnX,
+            y: spawnY,
             vx: 0, vy: 0, angle: 0,
-            hp: 150, maxHp: 150, size: 20,
+            hp: botHp, maxHp: botHp,
+            size: 30, // BIGGER visual size than default 20
             alive: true, kills: 0, isReady: true, isBot: true,
-            cooldown: 0
+            cooldown: 0, dashCooldown: 0,
+            hasChanged: true // Ensure first update is sent
           };
           room.players.set(botId, bData);
-          io.to(roomId).emit('br:player_joined', { pData: bData, aliveCount: room.players.size });
+          io.to(roomId).emit('br:player_joined', { pData: bData, aliveCount: room.players.size, maxPlayers: room.maxRoomPlayers });
         }
 
         room.locked = true;
         room.countingDown = true;
         room.startTime = now + 10000; // 10s countdown
-        io.to(roomId).emit('br:countdown_msg', { text: 'Bots filled the room. Starting in 10s...' });
+        io.to(roomId).emit('br:countdown_msg', { text: `${botsToFill} bots joined! Starting in 10s...` });
         broadcastServerList();
       }
     } // <--- CLOSE
 
     // Optimized spatial updates: only send data of players near other players
     room.players.forEach((recipient, recipientSid) => {
-        const playerUpdates = [];
-        const REC_X = recipient.x, REC_Y = recipient.y;
-        const R_DIST_SQ = 2000 * 2000;
+      const playerUpdates = [];
+      const REC_X = recipient.x, REC_Y = recipient.y;
+      const R_DIST_SQ = 2000 * 2000;
 
-        room.players.forEach(p => {
-            if (p.hasChanged && p.alive) {
-                const dx = REC_X - p.x;
-                const dy = REC_Y - p.y;
-                const distSq = dx * dx + dy * dy;
+      room.players.forEach(p => {
+        if (p.hasChanged && p.alive) {
+          const dx = REC_X - p.x;
+          const dy = REC_Y - p.y;
+          const distSq = dx * dx + dy * dy;
 
-                if (distSq < R_DIST_SQ || p.socketId === recipientSid || room.mode === 'pvp1v1') {
-                    playerUpdates.push({ socketId: p.socketId, x: p.x, y: p.y, vx: p.vx, vy: p.vy, angle: p.angle, hp: p.hp });
-                }
-            }
-        });
-        if (playerUpdates.length > 0) {
-            io.to(recipientSid).emit('br:batch_update', playerUpdates);
+          if (distSq < R_DIST_SQ || p.socketId === recipientSid || room.mode === 'pvp1v1') {
+            playerUpdates.push({ socketId: p.socketId, x: p.x, y: p.y, vx: p.vx, vy: p.vy, angle: p.angle, hp: p.hp });
+          }
         }
+      });
+      if (playerUpdates.length > 0) {
+        io.to(recipientSid).emit('br:batch_update', playerUpdates);
+      }
     });
 
     // Reset hasChanged after all recipients processed
@@ -858,7 +1047,8 @@ setInterval(() => {
   }
 }, 60); // Reduced tick rate slightly from 50ms to 60ms to save CPU
 
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.NEXT_PUBLIC_GAME_PORT || 3000;
+const HOST = process.env.GAME_HOST || '0.0.0.0'; // Use '0.0.0.0' to listen on all interfaces
 
 httpServer.on('error', (e) => {
   if (e.code === 'EADDRINUSE') {
@@ -869,9 +1059,9 @@ httpServer.on('error', (e) => {
   }
 });
 
-console.log('[Server] Attempting to listen on port', PORT);
-httpServer.listen(PORT, () => {
-  console.log(`[BR Socket Server] Running on port ${PORT}`);
+console.log(`[Server] Attempting to listen on ${HOST}:${PORT}...`);
+httpServer.listen(PORT, HOST, () => {
+  console.log(`[BR Socket Server] Running and listening on ${HOST}:${PORT}`);
 });
 
 instrument(io, {
